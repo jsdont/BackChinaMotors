@@ -7,10 +7,14 @@ from requests.exceptions import RequestException, Timeout
 @csrf_exempt
 @require_POST
 def telegram_hook(request):
+    # читаем именно по ключам окружения:
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
-        return JsonResponse({"ok": False, "where": "env", "error": "Missing env TELEGRAM_TOKEN or TELEGRAM_CHAT_ID"}, status=200)
+        return JsonResponse(
+            {"ok": False, "where": "env", "error": "Missing TELEGRAM_TOKEN or TELEGRAM_CHAT_ID"},
+            status=200
+        )
 
     try:
         payload = json.loads((request.body or b"{}").decode("utf-8"))
@@ -24,12 +28,14 @@ def telegram_hook(request):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
             timeout=10
         )
         ct = r.headers.get("content-type", "")
         data = r.json() if "application/json" in ct else {"raw": r.text}
-        return JsonResponse({"http": r.status_code, **data}, status=200)
+        ok = bool(data.get("ok", r.ok))
+        desc = data.get("description") or ("" if ok else r.text)
+        return JsonResponse({"ok": ok, "http": r.status_code, "description": desc}, status=200)
     except Timeout as e:
         return JsonResponse({"ok": False, "where": "network", "error": "Telegram timeout", "detail": str(e)}, status=200)
     except RequestException as e:

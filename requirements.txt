@@ -12,3 +12,8 @@ dj-database-url==2.2.0
 # Телега + gunicorn
 requests==2.32.3
 gunicorn==22.0.0
+
+cloudinary
+django-cloudinary-storage
+Pillow
+python-dotenv

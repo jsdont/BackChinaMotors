@@ -1,26 +1,26 @@
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+load_dotenv(BASE_DIR / ".env")
 # secret берём из секретов Fly
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-unsafe-secret-dont-use")
-DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
+DJANGO_DEBUG=True
+
 
 ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
     "corsheaders",
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-    "rest_framework",
-    "django_filters",
+    "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
+    "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
+    "rest_framework", "django_filters",
+    "cloudinary",              # ← добавить
+    "cloudinary_storage",      # ← добавить
     "catalog",
+    "cars",
 ]
 
 MIDDLEWARE = [
@@ -81,7 +81,7 @@ REST_FRAMEWORK = {
 }
 
 # CORS
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
     "https://china-motors-site.netlify.app",
     "https://chinamotors.com.kz",
@@ -93,3 +93,18 @@ CSRF_TRUSTED_ORIGINS = [
     "https://www.chinamotors.com.kz",
     "https://cm-backend-daniyal.fly.dev",
 ]
+
+# Cloudinary
+CLOUDINARY_URL = os.getenv('CLOUDINARY_URL')
+
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+# Если хочешь и статику через Cloudinary — раскомментируй:
+# STATICFILES_STORAGE = 'cloudinary_storage.storage.StaticHashedCloudinaryStorage'
+
+MEDIA_URL = '/media/'  # Django всё равно ждёт URL, но физически файлы в Cloudinary
+
+INSTALLED_APPS += ["drf_spectacular"]
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+

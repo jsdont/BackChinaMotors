@@ -1,14 +1,34 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
+
 from rest_framework.routers import DefaultRouter
-from catalog.views import ProductViewSet
-from cm_backend.views import telegram_hook
+from cars.views import CarViewSet
+
+from cm_backend.views import telegram_hook  # ← включаем хук
 
 router = DefaultRouter()
-router.register(r"products", ProductViewSet, basename="products")
+router.register(r"cars", CarViewSet, basename="car")
+
+def health(request):
+    return JsonResponse({"status": "ok", "service": "china-motors-backend"}, status=200)
 
 urlpatterns = [
+    path("", health, name="healthz"),
     path("admin/", admin.site.urls),
-    path("api/", include(router.urls)),
-    path("api/telegram", telegram_hook),  # POST
+
+    # API
+    path("api/", include(router.urls)),        # /api/cars/
+    path("api/telegram", telegram_hook),      # /api/telegram  ← РАЗКОММЕНТИРОВАНО
+]
+
+# Swagger / ReDoc (если установлен drf-spectacular)
+from drf_spectacular.views import (
+    SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+)
+
+urlpatterns += [
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
 ]
