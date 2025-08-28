@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from rest_framework.routers import DefaultRouter
 from cars.views import CarViewSet
 
-from cm_backend.views import telegram_hook  # ← включаем хук
+from cm_backend.views import telegram_hook, usd_rate
 
 router = DefaultRouter()
 router.register(r"cars", CarViewSet, basename="car")
@@ -18,11 +18,12 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 
     # API
-    path("api/", include(router.urls)),        # /api/cars/
-    path("api/telegram", telegram_hook),      # /api/telegram  ← РАЗКОММЕНТИРОВАНО
+    path("api/", include(router.urls)),
+    path("api/telegram", telegram_hook),  # POST
+    path("api/rate/usd", usd_rate),       # GET
 ]
 
-# Swagger / ReDoc (если установлен drf-spectacular)
+# Swagger / ReDoc (если используешь drf-spectacular)
 from drf_spectacular.views import (
     SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 )
