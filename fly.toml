@@ -1,21 +1,22 @@
+# fly.toml
 app = "cm-backend-daniyal"
 primary_region = "ams"
 
 [build]
-  # С докером всё ок, тут ничего не нужно
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8000"
+  DJANGO_SETTINGS_MODULE = "cm_backend.settings"
 
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 1
   processes = ["app"]
 
-[env]
-  DJANGO_SETTINGS_MODULE = "cm_backend.settings"
-  PYTHONUNBUFFERED = "1"
-
 [deploy]
+  # миграции + статика перед запуском
   release_command = "sh -lc 'python manage.py migrate --noinput && python manage.py collectstatic --noinput'"
-
