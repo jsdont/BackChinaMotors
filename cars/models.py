@@ -1,28 +1,25 @@
-import os
+# cars/models.py
 from django.db import models
-from cloudinary.models import CloudinaryField
 
-def cloud_folder():
-    base = os.getenv("CLOUDINARY_FOLDER", "china-motors")
-    return f"{base}/cars"
+class Vehicle(models.Model):
+    name = models.CharField(max_length=255, db_index=True)         # Модель / название
+    brand = models.CharField(max_length=120, blank=True)           # Бренд
+    year = models.PositiveIntegerField(null=True, blank=True)      # Год
+    body_type = models.CharField(max_length=120, blank=True)       # Тип (тягач/борт/самосвал...)
+    base_price_usd = models.DecimalField(max_digits=12, decimal_places=2)  # Цена, $
+    image_url = models.URLField(blank=True)                        # Картинка (можно пусто)
+    description = models.TextField(blank=True)                     # Описание (опционально)
 
-class Car(models.Model):
-    name  = models.CharField(max_length=120)
-    brand = models.CharField(max_length=80, blank=True)
-    price = models.DecimalField(max_digits=12, decimal_places=2)
-    year  = models.PositiveIntegerField(default=2020)
-
-    image  = CloudinaryField("image", folder=cloud_folder())
-    image2 = CloudinaryField("image", folder=cloud_folder(), blank=True, null=True)
-    image3 = CloudinaryField("image", folder=cloud_folder(), blank=True, null=True)
+    # Поля, которые могут пригодиться для калькулятора как пресеты
+    customs_fixed_usd = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    duty_pct = models.DecimalField(max_digits=5, decimal_places=2, default=10)
+    vat_pct = models.DecimalField(max_digits=5, decimal_places=2, default=12)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['-created_at']
+
     def __str__(self):
-        return f"{self.brand} {self.name} ({self.year})"
-
-    def card_url(self, w=480, h=320):
-        return self.image.url.replace("/upload/", f"/upload/f_auto,q_auto,c_fill,g_auto,w_{w},h_{h}/")
-
-    def hero_url(self, w=1600, h=630):
-        return self.image.url.replace("/upload/", f"/upload/f_auto,q_auto,c_fill,g_center,w_{w},h_{h}/")
+        y = f" {self.year}" if self.year else ""
+        return f"{self.name}{y}"

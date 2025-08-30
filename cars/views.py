@@ -1,8 +1,10 @@
-from rest_framework import viewsets, permissions
-from .models import Car
-from .serializers import CarSerializer
+# cars/views.py
+from rest_framework import viewsets, filters
+from .models import Vehicle
+from .serializers import VehicleSerializer
 
-class CarViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Car.objects.order_by("-created_at")
-    serializer_class = CarSerializer
-    permission_classes = [permissions.AllowAny]
+class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Vehicle.objects.all()
+    serializer_class = VehicleSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name', 'brand', 'body_type']

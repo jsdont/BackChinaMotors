@@ -10,7 +10,8 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-unsafe-secret-dont-use")
 DJANGO_DEBUG=True
 
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "cm-backend-daniyal.fly.dev", "chinamotors.com.kz", "www.chinamotors.com.kz"]
+
 
 INSTALLED_APPS = [
     "corsheaders",

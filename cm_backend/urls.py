@@ -33,3 +33,14 @@ urlpatterns += [
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
 ]
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from cars.views import VehicleViewSet
+
+router = DefaultRouter()
+router.register(r'vehicles', VehicleViewSet, basename='vehicle')
+
+urlpatterns = [
+    path('api/', include(router.urls)),
+    # ... твои остальные api-маршруты ...
+]
