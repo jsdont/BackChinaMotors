@@ -1,8 +1,9 @@
 from django.contrib import admin
-from .models import Car
+from .models import Vehicle
 
-@admin.register(Car)
-class CarAdmin(admin.ModelAdmin):
-    list_display = ("id", "brand", "name", "year", "price", "created_at")
-    list_filter = ("brand", "year")
-    search_fields = ("name", "brand")
+
+@admin.register(Vehicle)
+class VehicleAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'brand', 'model', 'year', 'price_usd', 'created_at')
+    list_filter = ('brand', 'year', 'body_type')
+    search_fields = ('name', 'brand', 'model', 'body_type')

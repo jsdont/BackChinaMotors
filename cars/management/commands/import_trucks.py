@@ -1,60 +1,67 @@
-# cars/management/commands/import_trucks.py
-from django.core.management.base import BaseCommand
-from cars.models import Vehicle
 import pandas as pd
+from django.core.management.base import BaseCommand, CommandError
+from cars.models import Vehicle
 
-# Подстрой названия колонок под свою Excel-таблицу
-COLS = {
-    'name': ['Модель', 'Name', 'Модель/Комплектация'],
-    'brand': ['Бренд', 'Brand'],
-    'year': ['Год', 'Year'],
-    'body_type': ['Тип', 'Body'],
-    'base_price_usd': ['Цена_$', 'USD', 'Price'],
-    'image_url': ['Image', 'Картинка', 'Фото'],
-    'description': ['Описание', 'Description'],
-    'customs_fixed_usd': ['ТС_$', 'Customs_fixed'],
-    'duty_pct': ['Пошлина_%', 'Duty_%'],
-    'vat_pct': ['НДС_%', 'VAT_%'],
-}
-
-def pick(row, keys, default=None, as_int=False, as_float=False):
-    for k in keys:
-        if k in row and pd.notna(row[k]):
-            val = row[k]
-            if as_int:
-                try: return int(val)
-                except: return default
-            if as_float:
-                try: return float(val)
-                except: return default
-            return str(val).strip()
-    return default
 
 class Command(BaseCommand):
-    help = "Импорт грузовой техники из Excel"
+    help = "Импорт грузовой техники из .xlsx в таблицу Vehicle"
 
     def add_arguments(self, parser):
-        parser.add_argument('path', type=str, help='Путь к .xlsx')
+        parser.add_argument("xlsx_path", type=str, help="Путь к .xlsx файлу")
 
     def handle(self, *args, **opts):
-        df = pd.read_excel(opts['path'])
-        created = 0
-        for _, r in df.iterrows():
-            row = r.to_dict()
-            name = pick(row, COLS['name']) or ''
-            if not name:
-                continue
-            defaults = {
-                'brand': pick(row, COLS['brand'], '') or '',
-                'year': pick(row, COLS['year'], None, as_int=True),
-                'body_type': pick(row, COLS['body_type'], '') or '',
-                'base_price_usd': pick(row, COLS['base_price_usd'], 0, as_float=True) or 0,
-                'image_url': pick(row, COLS['image_url'], '') or '',
-                'description': pick(row, COLS['description'], '') or '',
-                'customs_fixed_usd': pick(row, COLS['customs_fixed_usd'], None, as_float=True),
-                'duty_pct': pick(row, COLS['duty_pct'], 10, as_float=True) or 10,
-                'vat_pct': pick(row, COLS['vat_pct'], 12, as_float=True) or 12,
-            }
-            Vehicle.objects.update_or_create(name=name, year=defaults['year'], defaults=defaults)
-            created += 1
-        self.stdout.write(self.style.SUCCESS(f'Импортировано/обновлено: {created}'))
+        path = opts["xlsx_path"]
+        try:
+            df = pd.read_excel(path)
+        except Exception as e:
+            raise CommandError(f"Не удалось прочитать файл: {e}")
+
+        # Нормализуем названия столбцов (без учета регистра/пробелов)
+        cols = {str(c).strip().lower(): c for c in df.columns}
+
+        def pick(*variants):
+            for v in variants:
+                key = v.lower()
+                if key in cols:
+                    return cols[key]
+            return None
+
+        c_name = pick("name", "название", "модель", "наименование")
+        c_brand = pick("brand", "бренд", "марка")
+        c_model = pick("model", "модель")
+        c_year = pick("year", "год", "год выпуска")
+        c_body = pick("body_type", "тип кузова", "тип")
+        c_price = pick("price_usd", "цена, $", "цена usd", "цена $", "price")
+        c_mileage = pick("mileage_km", "пробег", "пробег, км")
+        c_image = pick("image_url", "фото", "image", "image url", "изображение")
+
+        created, updated = 0, 0
+
+        for _, row in df.iterrows():
+            name = str(row.get(c_name, "")).strip() if c_name else ""
+            brand = str(row.get(c_brand, "")).strip() if c_brand else ""
+            model = str(row.get(c_model, "")).strip() if c_model else ""
+            year = row.get(c_year)
+            body_type = str(row.get(c_body, "")).strip() if c_body else ""
+            price_usd = row.get(c_price)
+            mileage_km = row.get(c_mileage)
+            image_url = str(row.get(c_image, "")).strip() if c_image else ""
+
+            obj, is_created = Vehicle.objects.update_or_create(
+                name=name or f"{brand} {model}".strip(),
+                defaults=dict(
+                    brand=brand,
+                    model=model,
+                    year=int(year) if pd.notna(year) else None,
+                    body_type=body_type,
+                    price_usd=float(price_usd) if pd.notna(price_usd) else None,
+                    mileage_km=int(mileage_km) if pd.notna(mileage_km) else None,
+                    image_url=image_url,
+                ),
+            )
+            created += 1 if is_created else 0
+            updated += 0 if is_created else 1
+
+        self.stdout.write(self.style.SUCCESS(
+            f"Готово: создано {created}, обновлено {updated}. Всего: {len(df)}"
+        ))
