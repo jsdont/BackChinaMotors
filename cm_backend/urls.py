@@ -1,24 +1,29 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
+# Имена из cars.views:
+from cars.views import VehicleViewSet, usd_rate as rate_usd_view, telegram_hook as telegram_view
+
+# drf-spectacular представления
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from cars.views import VehicleViewSet, rate_usd, telegram_message
-
 router = DefaultRouter()
-router.register(r'vehicles', VehicleViewSet, basename='vehicle')
+router.register(r"vehicles", VehicleViewSet, basename="vehicle")
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
 
-    # OpenAPI схема и Swagger (удобно смотреть API)
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('', SpectacularSwaggerView.as_view(url_name='schema'), name='docs'),
+    # API
+    path("api/", include(router.urls)),
+    path("api/rate/usd/", rate_usd_view, name="rate-usd"),
+    path("api/telegram", telegram_view, name="telegram"),
 
-    # REST
-    path('api/', include(router.urls)),
-
-    # Служебные ручки для фронта
-    path('api/rate/usd', rate_usd),
-    path('api/telegram', telegram_message),
+    # OpenAPI/Swagger:
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path(
+        "api/docs/",
+        SpectacularSwaggerView.as_view(url_name="schema"),
+        name="swagger-ui",
+    ),
 ]

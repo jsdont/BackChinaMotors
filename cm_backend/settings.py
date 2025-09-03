@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     "cloudinary_storage",      # ← добавить
     "catalog",
     "cars",
+    "drf_spectacular",
 ]
 
 MIDDLEWARE = [
@@ -45,6 +46,7 @@ TEMPLATES = [
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
+                "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
@@ -73,6 +75,12 @@ STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
     }
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "ChinaMotors API",
+    "DESCRIPTION": "Vehicles, rates, telegram endpoint",
+    "VERSION": "1.0.0",
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -104,7 +112,7 @@ DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 MEDIA_URL = '/media/'  # Django всё равно ждёт URL, но физически файлы в Cloudinary
 
-INSTALLED_APPS += ["drf_spectacular"]
+
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
