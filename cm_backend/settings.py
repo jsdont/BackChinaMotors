@@ -8,9 +8,10 @@ load_dotenv(BASE_DIR / ".env")
 # secret берём из секретов Fly
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-unsafe-secret-dont-use")
 DJANGO_DEBUG=True
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", "cm-backend-daniyal.fly.dev", "chinamotors.com.kz", "www.chinamotors.com.kz"]
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "cm-backend-daniyal.fly.dev", "cm-backend-daniyal-blue-pond-9890.fly.dev", "chinamotors.com.kz", "www.chinamotors.com.kz"]
 
 
 INSTALLED_APPS = [
@@ -23,6 +24,7 @@ INSTALLED_APPS = [
     "catalog",
     "cars",
     "drf_spectacular",
+    "whitenoise.runserver_nostatic",
 ]
 
 MIDDLEWARE = [
@@ -86,25 +88,36 @@ SPECTACULAR_SETTINGS = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
 }
 
+
 # CORS
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
-    "https://china-motors-site.netlify.app",
+    "https://cm-backend-daniyal.fly.dev",
+    "https://cm-backend-daniyal-blue-pond-9890.fly.dev",
+    "https://jsdont.github.io",
     "https://chinamotors.com.kz",
-    "https://www.chinamotors.com.kz",
+    "https://www.chinamotors.com.kz", # если используете
 ]
+
 CSRF_TRUSTED_ORIGINS = [
     "https://china-motors-site.netlify.app",
     "https://chinamotors.com.kz",
     "https://www.chinamotors.com.kz",
     "https://cm-backend-daniyal.fly.dev",
+    "https://jsdont.github.io",
 ]
 
 # Cloudinary
-CLOUDINARY_URL = os.getenv('CLOUDINARY_URL')
+CLOUDINARY_URL = os.getenv("CLOUDINARY_URL", "")
+if CLOUDINARY_URL:
+    DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+else:
+    DEFAULT_FILE_STORAGE = "django.core.files.storage.FileSystemStorage"
 
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 # Если хочешь и статику через Cloudinary — раскомментируй:
@@ -112,9 +125,14 @@ DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 MEDIA_URL = '/media/'  # Django всё равно ждёт URL, но физически файлы в Cloudinary
 
+# В DEV простой storage, чтобы /admin не падал без collectstatic
+if DEBUG:
+    STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
 
-REST_FRAMEWORK = {
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
+# Логирование в консоль (видно в fly logs)
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": "INFO"},
 }
-
