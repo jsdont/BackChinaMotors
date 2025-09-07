@@ -6,7 +6,9 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 # secret берём из секретов Fly
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-unsafe-secret-dont-use")
+# Берём ключ из DJANGO_SECRET_KEY или из SECRET_KEY.
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY")
+
 DJANGO_DEBUG=True
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 
