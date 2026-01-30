@@ -1,0 +1,24 @@
+Django==5.2.1
+djangorestframework==3.15.2
+django-filter==24.3
+
+# статика и корсы
+whitenoise==6.8.2
+django-cors-headers==4.7.0
+
+# БД-конфиг (умеет разбирать DATABASE_URL)
+dj-database-url==3.0.1
+
+# Телега + gunicorn
+requests==2.32.3
+gunicorn==22.0.0
+
+cloudinary
+django-cloudinary-storage
+Pillow
+python-dotenv
+drf-spectacular==0.28.0
+
+pandas==2.3.2
+openpyxl==3.1.5
+drf-spectacular
