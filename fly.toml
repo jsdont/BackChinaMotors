@@ -4,7 +4,7 @@
 #
 
 app = 'cm-backend-daniyal'
-primary_region = 'waw'
+primary_region = 'arn'
 console_command = '/code/manage.py shell'
 
 [build]
