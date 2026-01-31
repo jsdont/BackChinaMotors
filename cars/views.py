@@ -8,6 +8,6 @@ class VehicleViewSet(viewsets.ModelViewSet):
     queryset = Vehicle.objects.all().order_by("-id")
     serializer_class = VehicleSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["brand", "model", "category", "vin", "year"]
+    search_fields = ["brand", "model", "year", "body_type"]
     ordering_fields = ["price_usd", "year", "id"]
     permission_classes = [IsAuthenticated]
