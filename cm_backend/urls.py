@@ -5,9 +5,13 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from core.views import PhoneTokenObtainPairView
+from app.webhooks import tawk_webhook
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+
+    # 🔹 tawk.to webhook
+    path("api/tawk/webhook/", tawk_webhook),
 
     path("api/", include("cars.urls")),
 
