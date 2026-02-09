@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 # === НАСТРОЙКИ TELEGRAM ===
-TELEGRAM_BOT_TOKEN = "8118020170:AAH8CNYBE5bqYMqVv0mup85U0d-RtoQyKSw"
+TELEGRAM_BOT_TOKEN = "8118020170:AAELAq_XPMG_7HKrqs6vTUzTxdfgiB3bxQM"
 TELEGRAM_CHAT_ID = "1052457410"
 # ==========================
 
