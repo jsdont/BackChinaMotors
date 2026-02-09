@@ -29,9 +29,6 @@ def tawk_webhook(request):
 
     payload = json.loads(request.body.decode("utf-8"))
 
-    if payload.get("event") != "message":
-        return JsonResponse({"status": "ignored"})
-
     message_text = payload["message"]["text"]
     visitor = payload.get("visitor", {})
     city = visitor.get("city", "—")
