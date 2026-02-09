@@ -45,3 +45,29 @@ def tawk_webhook(request):
 
     send_to_telegram(text)
     return JsonResponse({"status": "ok"})
+
+@csrf_exempt
+def contacts_form(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    name = payload.get("name", "—")
+    phone = payload.get("phone", "—")
+    message = payload.get("message", "—")
+
+    text = (
+        "📨 Заявка с формы Contacts\n\n"
+        f"Имя: {name}\n"
+        f"Телефон: {phone}\n\n"
+        f"Сообщение:\n{message}"
+    )
+
+
+    send_to_telegram(text)
+
+    return JsonResponse({"status": "ok"})
