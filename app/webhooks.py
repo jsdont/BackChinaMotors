@@ -17,7 +17,9 @@ def send_to_telegram(text: str):
         "parse_mode": "HTML",
     }
     try:
-        requests.post(TG_API_URL, json=payload, timeout=5)
+        r = requests.post(TG_API_URL, json=payload, timeout=5)
+        print("TG STATUS:", r.status_code)
+        print("TG RESPONSE:", r.text)
     except Exception as e:
         print("TG ERROR:", e)
 
