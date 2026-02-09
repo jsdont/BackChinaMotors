@@ -17,7 +17,14 @@ def send_to_telegram(text: str):
         "text": text,
         "parse_mode": "HTML",
     }
-    requests.post(url, json=payload, timeout=10)
+
+    try:
+        r = requests.post(url, json=payload, timeout=10)
+        print("TELEGRAM STATUS:", r.status_code)
+        print("TELEGRAM RESPONSE:", r.text)
+    except Exception as e:
+        print("TELEGRAM ERROR:", str(e))
+
 
 
 @csrf_exempt
