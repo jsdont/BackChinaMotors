@@ -15,16 +15,11 @@ def send_to_telegram(text: str):
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
-        "parse_mode": "HTML",
     }
 
-    try:
-        r = requests.post(url, json=payload, timeout=10)
-        print("TELEGRAM STATUS:", r.status_code)
-        print("TELEGRAM RESPONSE:", r.text)
-    except Exception as e:
-        print("TELEGRAM ERROR:", str(e))
-
+    r = requests.post(url, json=payload, timeout=10)
+    print("TELEGRAM STATUS:", r.status_code)
+    print("TELEGRAM RESPONSE:", r.text)
 
 
 @csrf_exempt
@@ -32,26 +27,21 @@ def tawk_webhook(request):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    payload = json.loads(request.body.decode("utf-8"))
 
-    # ===== Извлекаем данные =====
-    message_text = payload.get("message", {}).get("text", "")
+    if payload.get("event") != "message":
+        return JsonResponse({"status": "ignored"})
+
+    message_text = payload["message"]["text"]
     visitor = payload.get("visitor", {})
     city = visitor.get("city", "—")
     country = visitor.get("country", "—")
-    event = payload.get("event", "unknown")
 
     text = (
-        "📩 <b>Новое сообщение с сайта (Tawk.to)</b>\n\n"
-        f"💬 <b>Сообщение:</b>\n{message_text}\n\n"
-        f"📍 <b>Город:</b> {city}, {country}\n"
-        f"⚙️ <b>Событие:</b> {event}"
+        "Новое сообщение с сайта (Tawk)\n\n"
+        f"{message_text}\n\n"
+        f"Город: {city}, {country}"
     )
 
-    # ===== ОТПРАВКА В TELEGRAM =====
     send_to_telegram(text)
-
     return JsonResponse({"status": "ok"})
