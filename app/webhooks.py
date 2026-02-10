@@ -46,12 +46,12 @@ def tawk_webhook(request):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     message = payload.get("message", {})
+    message_text = message.get("text", "—")
+
     visitor = payload.get("visitor", {})
     page = payload.get("page", {})
     page_url = page.get("url", "—")
 
-
-    message_text = message.get("text", "—")
     city = visitor.get("city", "—")
     country = visitor.get("country", "—")
 
@@ -77,17 +77,19 @@ def contacts_form(request):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+    # ✅ ЗАЩИТА ОТ ПУСТЫХ / МУСОРНЫХ ЗАПРОСОВ
+    if "message" not in payload:
+        return JsonResponse({"status": "ignored"})
+
     name = payload.get("name", "—")
     phone = payload.get("phone", "—")
     message = payload.get("message", "—")
     page_url = payload.get("page", "—")
-
 
     text = (
         "📨 <b>ЗАЯВКА — CONTACTS</b>\n\n"
@@ -98,7 +100,6 @@ def contacts_form(request):
         f"<b>Источник:</b> Форма «Контакты»"
     )
 
-
     calc_id = extract_calc_id(message)
 
     CalculatorLead.objects.create(
@@ -107,11 +108,8 @@ def contacts_form(request):
         name=name,
         phone=phone,
         message=message,
-        page_url=payload.get("page", ""),
+        page_url=page_url,
     )
 
     send_to_telegram(text)
     return JsonResponse({"status": "ok"})
-
-
-
