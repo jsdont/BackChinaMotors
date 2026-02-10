@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     "catalog",
     "cars",
     "core",
-
+    "app",
     "drf_spectacular",
     "rest_framework_simplejwt",
 ]

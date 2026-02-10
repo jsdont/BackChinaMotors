@@ -5,7 +5,6 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from core.views import PhoneTokenObtainPairView
-from app.webhooks import tawk_webhook
 from app.webhooks import tawk_webhook, contacts_form
 
 urlpatterns = [

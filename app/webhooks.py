@@ -1,6 +1,11 @@
 import json
 import requests
 
+import time
+
+import re
+from app.models import CalculatorLead
+
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -9,13 +14,21 @@ TELEGRAM_BOT_TOKEN = "8118020170:AAELAq_XPMG_7HKrqs6vTUzTxdfgiB3bxQM"
 TELEGRAM_CHAT_ID = "1052457410"
 # ==========================
 
+def extract_calc_id(text: str):
+    if not text:
+        return None
+    m = re.search(r'CM-\d{8}-\d{4}', text)
+    return m.group(0) if m else None
+
 
 def send_to_telegram(text: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
+        "parse_mode": "HTML",
     }
+
 
     r = requests.post(url, json=payload, timeout=10)
     print("TELEGRAM STATUS:", r.status_code)
@@ -27,26 +40,43 @@ def tawk_webhook(request):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    payload = json.loads(request.body.decode("utf-8"))
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    message_text = payload["message"]["text"]
+    message = payload.get("message", {})
     visitor = payload.get("visitor", {})
+    page = payload.get("page", {})
+    page_url = page.get("url", "—")
+
+
+    message_text = message.get("text", "—")
     city = visitor.get("city", "—")
     country = visitor.get("country", "—")
 
     text = (
-        "Новое сообщение с сайта (Tawk)\n\n"
-        f"{message_text}\n\n"
-        f"Город: {city}, {country}"
+        "💬 <b>НОВОЕ СООБЩЕНИЕ — ЧАТ (Tawk.to)</b>\n\n"
+        f"<b>Сообщение:</b>\n{message_text}\n\n"
+        f"<b>Город:</b> {city}, {country}\n"
+        f"<b>Страница:</b> {page_url}\n"
+        f"<b>Источник:</b> Онлайн-чат сайта"
     )
+
 
     send_to_telegram(text)
     return JsonResponse({"status": "ok"})
 
+
 @csrf_exempt
 def contacts_form(request):
+    print("CONTACTS_FORM HIT")
+    print(request.method)
+    print(request.body)
+
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
+
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -56,15 +86,32 @@ def contacts_form(request):
     name = payload.get("name", "—")
     phone = payload.get("phone", "—")
     message = payload.get("message", "—")
+    page_url = payload.get("page", "—")
+
 
     text = (
-        "📨 Заявка с формы Contacts\n\n"
-        f"Имя: {name}\n"
-        f"Телефон: {phone}\n\n"
-        f"Сообщение:\n{message}"
+        "📨 <b>ЗАЯВКА — CONTACTS</b>\n\n"
+        f"<b>Имя:</b> {name}\n"
+        f"<b>Телефон:</b> {phone}\n\n"
+        f"<b>Сообщение:</b>\n{message}\n\n"
+        f"<b>Страница:</b> {page_url}\n"
+        f"<b>Источник:</b> Форма «Контакты»"
     )
 
 
-    send_to_telegram(text)
+    calc_id = extract_calc_id(message)
 
+    CalculatorLead.objects.create(
+        calc_id=calc_id or "CONTACT-" + str(int(time.time())),
+        source="contacts",
+        name=name,
+        phone=phone,
+        message=message,
+        page_url=payload.get("page", ""),
+    )
+
+    send_to_telegram(text)
     return JsonResponse({"status": "ok"})
+
+
+
