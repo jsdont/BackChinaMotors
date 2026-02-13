@@ -91,6 +91,7 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
         )["total"] or 0
 
 
+
         conversion = 0
         if total_leads > 0:
             conversion = round((total_deals / total_leads) * 100, 1)
@@ -106,8 +107,6 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
             "conversion": conversion,
             "avg_profit": avg_profit,
         }
-
-        from django.db.models import Sum
 
         revenue_by_day = (
             deals
