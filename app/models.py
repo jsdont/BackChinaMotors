@@ -12,3 +12,12 @@ class CalculatorLead(models.Model):
 
     def __str__(self):
         return self.calc_id
+
+    STATUS_CHOICES = [
+        ("new", "New"),
+        ("contacted", "Contacted"),
+        ("deal", "Deal"),
+        ("closed", "Closed"),
+    ]
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new")

@@ -9,6 +9,9 @@ from app.models import CalculatorLead
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from django.conf import settings
+
+
 # === НАСТРОЙКИ TELEGRAM ===
 TELEGRAM_BOT_TOKEN = "8118020170:AAELAq_XPMG_7HKrqs6vTUzTxdfgiB3bxQM"
 TELEGRAM_CHAT_ID = "1052457410"
@@ -22,7 +25,7 @@ def extract_calc_id(text: str):
 
 
 def send_to_telegram(text: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
@@ -85,7 +88,7 @@ def contacts_form(request):
     name = payload.get("name", "—")
     phone = payload.get("phone", "—")
     message = payload.get("message", "—")
-    page_url = payload.get("page", "—")
+    page_url = payload.get("page", "—").split("?")[0]
 
     calc_id = extract_calc_id(message)
 
