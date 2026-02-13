@@ -133,6 +133,89 @@ new Chart(document.getElementById("revenueChart"), {
     </tbody>
 </table>
 {% endif %}
+{% if manager_stats %}
+<div style="margin-top:40px;padding:20px;background:#111;color:white;border-radius:10px;">
+    <h2>👥 KPI менеджеров</h2>
+
+    <table style="width:100%;margin-top:15px;">
+        <thead>
+            <tr>
+                <th>Менеджер</th>
+                <th>Лидов</th>
+                <th>Продаж</th>
+                <th>Конверсия</th>
+                <th>Прибыль</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in manager_stats %}
+            <tr>
+                <td>{{ m.manager }}</td>
+                <td>{{ m.total }}</td>
+                <td>{{ m.won }}</td>
+                <td>{{ m.conversion }}%</td>
+                <td>{{ m.revenue }} ₸</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% if manager_stats %}
+<h2 style="margin-top:40px;">🏆 Рейтинг менеджеров</h2>
+
+<table style="width:100%; margin-top:15px;">
+    <thead>
+        <tr>
+            <th>Менеджер</th>
+            <th>Лиды</th>
+            <th>Продажи</th>
+            <th>Конверсия</th>
+            <th>Прибыль</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in manager_stats %}
+        <tr>
+            <td>{{ m.manager.username }}</td>
+            <td>{{ m.total }}</td>
+            <td>{{ m.won }}</td>
+            <td>{{ m.conversion }}%</td>
+            <td>{{ m.revenue }} ₸</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% if manager_stats %}
+<div style="margin-top:40px; padding:20px; background:#111; color:white; border-radius:10px;">
+    <h2>👤 KPI Менеджеров</h2>
+
+    <table style="width:100%; margin-top:15px;">
+        <thead>
+            <tr>
+                <th>Менеджер</th>
+                <th>Лидов</th>
+                <th>Продаж</th>
+                <th>Прибыль</th>
+                <th>Конверсия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in manager_stats %}
+            <tr>
+                <td>{{ m.manager }}</td>
+                <td>{{ m.leads }}</td>
+                <td>{{ m.deals }}</td>
+                <td>{{ m.profit }} ₸</td>
+                <td>{{ m.conversion }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+<a href="?only_won=1" class="button">🏆 Только продажи</a>
 
 {{ block.super }}
 {% endblock %}

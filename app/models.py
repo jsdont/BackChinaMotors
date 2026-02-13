@@ -1,9 +1,9 @@
 from django.db import models
 from catalog.models import Product
-
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.utils import timezone
 class CalculatorLead(models.Model):
-    from django.conf import settings
-
     calc_id = models.CharField(max_length=32, unique=True)
     source = models.CharField(max_length=32)  # calculator / contacts / tawk
     name = models.CharField(max_length=255, blank=True)
@@ -24,7 +24,13 @@ class CalculatorLead(models.Model):
     ]
 
 
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="new",
+        db_index=True
+    )
+
 
     product = models.ForeignKey(
         Product,
@@ -45,25 +51,24 @@ class CalculatorLead(models.Model):
         decimal_places=2,
         default=0
     )
-    from django.core.exceptions import ValidationError
 
     def clean(self):
-        from django.core.exceptions import ValidationError
+        if self.status == "won" and not self.product:
+            raise ValidationError("Won lead must have a product selected.")
 
-        if self.status == "won":
-            if not self.product:
-                raise ValidationError("Won deal must have a product selected.")
-
-            # фиксируем прибыль в момент продажи
-            if not self.profit_snapshot:
-                self.profit_snapshot = self.product.profit
 
     def save(self, *args, **kwargs):
-        if self.status == "won" and self.product:
-            if not self.profit_snapshot:
+        if self.status == "won":
+            if not self.closed_at:
+                self.closed_at = timezone.now()
+
+            if self.product and not self.profit_snapshot:
                 self.profit_snapshot = self.product.profit
 
         super().save(*args, **kwargs)
+
+
+
 
 
 

@@ -2,12 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.db.models.functions import TruncDate
 from django.db.models import Count, Sum
-from django.utils import timezone
-
 from .models import CalculatorLead
-
-
-
 @admin.register(CalculatorLead)
 class CalculatorLeadAdmin(admin.ModelAdmin):
     list_display = (
@@ -25,7 +20,6 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
     
     list_filter = ("source", "status", "product", "created_at")
     search_fields = ("calc_id", "name", "phone", "message")
-    ordering = ("-created_at",)
 
     def colored_status(self, obj):
         colors = {
@@ -33,8 +27,6 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
             "in_progress": "orange",
             "won": "green",
             "lost": "gray",
-            "contacted": "orange",
-            "closed": "gray",
         }
 
         return format_html(
@@ -67,8 +59,11 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
     def mark_as_won(self, request, queryset):
         for obj in queryset:
             obj.status = "won"
+            if obj.product:
+                obj.profit_snapshot = obj.product.profit
             obj.full_clean()
             obj.save()
+
 
     def mark_as_lost(self, request, queryset):
         for obj in queryset:
@@ -79,7 +74,7 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
 
-        queryset = CalculatorLead.objects.all()
+        queryset = self.get_queryset(request)
 
         total_leads = queryset.count()
         deals = queryset.filter(status="won", product__isnull=False, closed_at__isnull=False)
@@ -89,6 +84,7 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
         total_revenue = deals.aggregate(
             total=Sum("profit_snapshot")
         )["total"] or 0
+
 
 
 
@@ -160,32 +156,31 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
             "in_progress": progress_count,
             "won": won_count,
             "lost": lost_count,
-        }
-
-        manager_stats = (
-            deals
-            .values("manager__phone")
-            .annotate(
-                total_deals=Count("id"),
-                total_profit=Sum("profit_snapshot")
-            )
-            .order_by("-total_profit")
-        )
-
-        extra_context["manager_stats"] = manager_stats
+        }        
 
         return super().changelist_view(request, extra_context=extra_context)
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
 
-        if request.user.is_superuser:
-            return qs
-
-        return qs.filter(manager=request.user)
-    
     def save_model(self, request, obj, form, change):
         if not obj.manager:
             obj.manager = request.user
         super().save_model(request, obj, form, change)
+    
+    def get_readonly_fields(self, request, obj=None):
+        if not request.user.is_superuser:
+            return ["manager"]
+        return []
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+
+        if not request.user.is_superuser:
+            qs = qs.filter(manager=request.user)
+
+        if request.GET.get("only_won"):
+            qs = qs.filter(status="won")
+
+        return qs
+
+    ordering = ("-profit_snapshot", "-created_at")
 
 

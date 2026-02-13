@@ -9,19 +9,13 @@ from django.conf import settings
 from catalog.models import Product
 from django.contrib.auth.models import User, Group
 from django.db.models import Count
-
-
-# === НАСТРОЙКИ TELEGRAM ===
-TELEGRAM_BOT_TOKEN = "8118020170:AAELAq_XPMG_7HKrqs6vTUzTxdfgiB3bxQM"
-TELEGRAM_CHAT_ID = "1052457410"
-# ==========================
+from django.contrib.auth import get_user_model
 
 def extract_calc_id(text: str):
     if not text:
         return None
     m = re.search(r'CM-\d{8}-\d{4}', text)
     return m.group(0) if m else None
-
 
 def send_to_telegram(text: str):
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -70,15 +64,25 @@ def tawk_webhook(request):
     return JsonResponse({"status": "ok"})
 
 def get_next_manager():
-    try:
-        group = Group.objects.get(name="Manager")
-        managers = group.user_set.annotate(
-            leads_count=Count("assigned_leads")
-        ).order_by("leads_count")
+    User = get_user_model()
+    managers = User.objects.filter(is_staff=True).order_by("id")
 
-        return managers.first()
-    except Group.DoesNotExist:
+    if not managers.exists():
         return None
+
+    last_lead = CalculatorLead.objects.exclude(manager=None).order_by("-created_at").first()
+
+    if not last_lead or not last_lead.manager:
+        return managers.first()
+
+    manager_ids = list(managers.values_list("id", flat=True))
+
+    try:
+        current_index = manager_ids.index(last_lead.manager.id)
+        next_index = (current_index + 1) % len(manager_ids)
+        return managers.get(id=manager_ids[next_index])
+    except ValueError:
+        return managers.first()
 
 @csrf_exempt
 def contacts_form(request):
@@ -90,7 +94,6 @@ def contacts_form(request):
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # защита от мусорных запросов
     if "message" not in payload:
         return JsonResponse({"status": "ignored"})
 
@@ -98,7 +101,6 @@ def contacts_form(request):
     phone = payload.get("phone", "—")
     message = payload.get("message", "—")
     page_url = payload.get("page", "—").split("?")[0]
-
 
     product_id = payload.get("product_id")
     product = None
@@ -108,7 +110,6 @@ def contacts_form(request):
             product = Product.objects.get(id=product_id)
         except Product.DoesNotExist:
             product = None
-
 
     calc_id = extract_calc_id(message)
 
@@ -125,10 +126,6 @@ def contacts_form(request):
         manager=manager,
     )
 
-
-
-
-
     text = (
         "📨 <b>ЗАЯВКА — CONTACTS</b>\n\n"
         f"<b>Имя:</b> {name}\n"
@@ -139,4 +136,6 @@ def contacts_form(request):
     )
 
     send_to_telegram(text)
+
     return JsonResponse({"status": "ok"})
+
