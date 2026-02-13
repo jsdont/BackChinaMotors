@@ -7,7 +7,7 @@ class CalculatorLead(models.Model):
     name = models.CharField(max_length=255, blank=True)
     phone = models.CharField(max_length=64, blank=True)
     message = models.TextField()
-    page_url = models.URLField(blank=True)
+    page_url = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
