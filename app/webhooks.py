@@ -1,17 +1,15 @@
 import json
 import requests
-
 import time
-
 import re
 from app.models import CalculatorLead
-
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-
 from django.conf import settings
-
 from catalog.models import Product
+from django.contrib.auth.models import User, Group
+from django.db.models import Count
+
 
 # === НАСТРОЙКИ TELEGRAM ===
 TELEGRAM_BOT_TOKEN = "8118020170:AAELAq_XPMG_7HKrqs6vTUzTxdfgiB3bxQM"
@@ -71,6 +69,16 @@ def tawk_webhook(request):
     send_to_telegram(text)
     return JsonResponse({"status": "ok"})
 
+def get_next_manager():
+    try:
+        group = Group.objects.get(name="Manager")
+        managers = group.user_set.annotate(
+            leads_count=Count("assigned_leads")
+        ).order_by("leads_count")
+
+        return managers.first()
+    except Group.DoesNotExist:
+        return None
 
 @csrf_exempt
 def contacts_form(request):
@@ -104,6 +112,8 @@ def contacts_form(request):
 
     calc_id = extract_calc_id(message)
 
+    manager = get_next_manager()
+
     lead = CalculatorLead.objects.create(
         calc_id=calc_id or "CONTACT-" + str(int(time.time())),
         source="contacts",
@@ -112,7 +122,9 @@ def contacts_form(request):
         message=message,
         page_url=page_url,
         product=product,
+        manager=manager,
     )
+
 
 
 
