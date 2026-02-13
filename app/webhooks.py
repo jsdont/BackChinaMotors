@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from django.conf import settings
 
+from catalog.models import Product
 
 # === НАСТРОЙКИ TELEGRAM ===
 TELEGRAM_BOT_TOKEN = "8118020170:AAELAq_XPMG_7HKrqs6vTUzTxdfgiB3bxQM"
@@ -27,7 +28,7 @@ def extract_calc_id(text: str):
 def send_to_telegram(text: str):
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": settings.TELEGRAM_CHAT_ID,
         "text": text,
         "parse_mode": "HTML",
     }
@@ -90,6 +91,17 @@ def contacts_form(request):
     message = payload.get("message", "—")
     page_url = payload.get("page", "—").split("?")[0]
 
+
+    product_id = payload.get("product_id")
+    product = None
+
+    if product_id:
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            product = None
+
+
     calc_id = extract_calc_id(message)
 
     lead = CalculatorLead.objects.create(
@@ -99,7 +111,9 @@ def contacts_form(request):
         phone=phone,
         message=message,
         page_url=page_url,
+        product=product,
     )
+
 
 
 

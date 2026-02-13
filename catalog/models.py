@@ -13,6 +13,11 @@ class Product(models.Model):
     image_url = models.URLField(blank=True)                 # https://.../img.jpg
     specs = models.JSONField(default=list, blank=True)      # ["Евро 5", "6×4", "460 л.с."]
     created_at = models.DateTimeField(auto_now_add=True)
+    profit = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0
+    )
 
     class Meta:
         ordering = ['price']

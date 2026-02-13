@@ -1,0 +1,138 @@
+{% extends "admin/change_list.html" %}
+
+{% block content %}
+{% if crm_stats %}
+<div style="margin-bottom:25px;padding:20px;background:#111;border-radius:10px;color:white;">
+    <h2>📊 CRM Dashboard</h2>
+
+    <p>Всего лидов: <b>{{ crm_stats.total_leads }}</b></p>
+    <p>Сделок: <b style="color:lime">{{ crm_stats.total_deals }}</b></p>
+    <p>Конверсия: <b style="color:orange">{{ crm_stats.conversion }}%</b></p>
+    <p>Общий доход: <b style="color:#4CAF50">{{ crm_stats.total_revenue }} ₸</b></p>
+    <p>Средняя прибыль с сделки: <b>{{ crm_stats.avg_profit }} ₸</b></p>
+</div>
+{% endif %}
+
+<div style="padding:15px; margin-bottom:20px; background:#111; border-radius:10px;">
+    <h3 style="color:white;">📊 Статистика лидов</h3>
+    <div style="color:white;">
+        Всего: {{ lead_stats.total }} |
+        🔴 New: {{ lead_stats.new }} |
+        🟠 Contacted: {{ lead_stats.contacted }} |
+        🟢 Deal: {{ lead_stats.deal }} |
+        ⚫ Closed: {{ lead_stats.closed }}
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+{% if revenue_chart %}
+<canvas id="revenueChart" height="100"></canvas>
+
+<script>
+const data = {{ revenue_chart|safe }};
+
+const labels = data.map(item => item.day);
+const totals = data.map(item => item.total);
+
+new Chart(document.getElementById("revenueChart"), {
+    type: "line",
+    data: {
+        labels: labels,
+        datasets: [{
+            label: "Прибыль по дням",
+            data: totals,
+            borderColor: "lime",
+            backgroundColor: "rgba(0,255,0,0.1)",
+            tension: 0.3
+        }]
+    },
+    options: {
+        plugins: {
+            legend: { labels: { color: "white" } }
+        },
+        scales: {
+            x: { ticks: { color: "white" } },
+            y: { ticks: { color: "white" } }
+        }
+    }
+});
+</script>
+{% endif %}
+{% if top_products %}
+<h2 style="margin-top:40px;">🏆 Топ-продукты по прибыли</h2>
+
+<table class="admin-table" style="width:100%; margin-top:15px;">
+    <thead>
+        <tr>
+            <th>Продукт</th>
+            <th>Сделок</th>
+            <th>Общая прибыль</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in top_products %}
+        <tr>
+            <td>{{ item.product__title }}</td>
+            <td>{{ item.total_deals }}</td>
+            <td>{{ item.total_profit|default:0 }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+<div style="margin:20px 0; padding:20px; background:#111; color:#fff; border-radius:8px;">
+    <h2>📊 Конверсия</h2>
+    <p><strong>Всего лидов:</strong> {{ total_leads }}</p>
+    <p><strong>Закрытых сделок:</strong> {{ total_deals }}</p>
+    <p><strong>Конверсия:</strong> {{ conversion }}%</p>
+</div>
+<div style="margin:20px 0; padding:20px; background:#0f172a; color:#fff; border-radius:8px;">
+    <h2>🔥 Воронка продаж</h2>
+    <p>🆕 Новые: {{ funnel.new }}</p>
+    <p>⚙ В работе: {{ funnel.in_progress }}</p>
+    <p>🏆 Продано: {{ funnel.won }}</p>
+    <p>❌ Потеряно: {{ funnel.lost }}</p>
+</div>
+{% if manager_stats %}
+<h2 style="margin-top:40px;">👤 Менеджеры</h2>
+
+<table style="width:100%; margin-top:15px;">
+    <tr>
+        <th>Менеджер</th>
+        <th>Сделок</th>
+        <th>Прибыль</th>
+    </tr>
+    {% for item in manager_stats %}
+    <tr>
+        <td>{{ item.manager__phone }}</td>
+        <td>{{ item.total_deals }}</td>
+        <td>{{ item.total_profit }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+{% if top_managers %}
+<h2 style="margin-top:40px;">👑 Топ менеджеры</h2>
+
+<table style="width:100%; margin-top:15px;">
+    <thead>
+        <tr>
+            <th>Менеджер</th>
+            <th>Сделок</th>
+            <th>Общая прибыль</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in top_managers %}
+        <tr>
+            <td>{{ item.manager__phone }}</td>
+            <td>{{ item.total_deals }}</td>
+            <td>{{ item.total_profit|default:0 }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{{ block.super }}
+{% endblock %}
