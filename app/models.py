@@ -6,7 +6,7 @@ class CalculatorLead(models.Model):
     source = models.CharField(max_length=32)  # calculator / contacts / tawk
     name = models.CharField(max_length=255, blank=True)
     phone = models.CharField(max_length=64, blank=True)
-    message = models.TextField(blank=True)
+    message = models.TextField()
     page_url = models.URLField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
