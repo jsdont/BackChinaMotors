@@ -70,10 +70,6 @@ def tawk_webhook(request):
 
 @csrf_exempt
 def contacts_form(request):
-    print("CONTACTS_FORM HIT")
-    print(request.method)
-    print(request.body)
-
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -82,7 +78,7 @@ def contacts_form(request):
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # ✅ ЗАЩИТА ОТ ПУСТЫХ / МУСОРНЫХ ЗАПРОСОВ
+    # защита от мусорных запросов
     if "message" not in payload:
         return JsonResponse({"status": "ignored"})
 
@@ -91,24 +87,26 @@ def contacts_form(request):
     message = payload.get("message", "—")
     page_url = payload.get("page", "—")
 
-    text = (
-        "📨 <b>ЗАЯВКА — CONTACTS</b>\n\n"
-        f"<b>Имя:</b> {name}\n"
-        f"<b>Телефон:</b> {phone}\n\n"
-        f"<b>Сообщение:</b>\n{message}\n\n"
-        f"<b>Страница:</b> {page_url}\n"
-        f"<b>Источник:</b> Форма «Контакты»"
-    )
-
     calc_id = extract_calc_id(message)
 
-    CalculatorLead.objects.create(
+    lead = CalculatorLead.objects.create(
         calc_id=calc_id or "CONTACT-" + str(int(time.time())),
         source="contacts",
         name=name,
         phone=phone,
         message=message,
         page_url=page_url,
+    )
+
+
+
+    text = (
+        "📨 <b>ЗАЯВКА — CONTACTS</b>\n\n"
+        f"<b>Имя:</b> {name}\n"
+        f"<b>Телефон:</b> {phone}\n\n"
+        f"<b>Сообщение:</b>\n{message}\n\n"
+        f"<b>Страница:</b> {page_url}\n"
+        f"<b>ID:</b> {lead.calc_id}"
     )
 
     send_to_telegram(text)
