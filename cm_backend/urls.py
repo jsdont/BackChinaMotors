@@ -18,4 +18,6 @@ urlpatterns = [
 
     path("api/auth/login/", PhoneTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+
+    path("api/", include("app.urls")),
 ]
