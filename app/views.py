@@ -15,6 +15,8 @@ def my_leads(request):
     return Response(serializer.data)
 
 
+from django.utils import timezone
+
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def update_lead_status(request, pk):
@@ -23,9 +25,39 @@ def update_lead_status(request, pk):
     except CalculatorLead.DoesNotExist:
         return Response({"error": "Lead not found"}, status=404)
 
-    serializer = LeadStatusUpdateSerializer(lead, data=request.data, partial=True)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data)
+    new_status = request.data.get("status")
 
-    return Response(serializer.errors, status=400)
+    if not new_status:
+        return Response({"error": "Status is required"}, status=400)
+
+    # ❌ Нельзя менять закрытые лиды
+    if lead.status in ["won", "lost"]:
+        return Response(
+            {"error": "Cannot change status of closed lead"},
+            status=400
+        )
+
+    # ❌ Нельзя ставить won без продукта
+    if new_status == "won" and not lead.product:
+        return Response(
+            {"error": "Cannot mark as won without product"},
+            status=400
+        )
+
+    # Обновляем статус
+    lead.status = new_status
+
+    # Если выиграли — фиксируем дату и прибыль
+    if new_status == "won":
+        lead.closed_at = timezone.now()
+        if lead.product:
+            lead.profit_snapshot = lead.product.profit
+
+    lead.save()
+
+    return Response({
+        "id": lead.id,
+        "status": lead.status,
+        "closed_at": lead.closed_at,
+        "profit_snapshot": lead.profit_snapshot
+    })

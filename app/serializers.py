@@ -18,3 +18,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "created_at",
             "closed_at",
         ]
+class LeadStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CalculatorLead
+        fields = ["status"]
