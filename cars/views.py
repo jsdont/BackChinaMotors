@@ -11,4 +11,4 @@ class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
 
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["brand", "model", "year", "body_type"]
-    ordering_fields = ["price_usd", "year", "id"]
+    ordering_fields = ["price_usd", "price_cny", "year", "id"]

@@ -15,6 +15,7 @@ class Vehicle(models.Model):
         help_text="Полная масса ТС в тоннах"
     )
     price_usd = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    price_cny = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     mileage_km = models.IntegerField(null=True, blank=True)
     image_url = models.URLField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
