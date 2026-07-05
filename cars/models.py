@@ -18,6 +18,12 @@ class Vehicle(models.Model):
     price_cny = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     mileage_km = models.IntegerField(null=True, blank=True)
     image_url = models.URLField(blank=True, default="")
+    images = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Доп. фото галереи — список ссылок, например: "
+                   '["https://.../1.jpg", "https://.../2.jpg"]'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
