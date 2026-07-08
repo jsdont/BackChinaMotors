@@ -13,6 +13,12 @@ class Vehicle(models.Model):
     model = models.CharField(max_length=120, blank=True, default="")
     year = models.PositiveIntegerField(null=True, blank=True)
     body_type = models.CharField(max_length=120, blank=True, default="")
+    extra_info = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Доп. информация",
+        help_text="Любые дополнительные детали о технике — выводится на странице товара"
+    )
     weight_t = models.DecimalField(
         max_digits=5,
         decimal_places=2,
