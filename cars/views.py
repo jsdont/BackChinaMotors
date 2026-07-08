@@ -1,5 +1,6 @@
 import re
 import time
+from datetime import datetime, timedelta
 
 import requests
 from django.http import JsonResponse
@@ -24,7 +25,20 @@ class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
 # avoid hammering their feed on every calculator page load.
 _RATES_CACHE = {"data": None, "fetched_at": 0}
 _RATES_CACHE_TTL = 600  # seconds
-_NBK_FEED_URL = "https://nationalbank.kz/rss/get_rates.cfm?fdate="
+_NBK_FEED_URL = "https://nationalbank.kz/rss/get_rates.cfm"
+
+
+def _fetch_nbk_text():
+    # fdate is required (DD.MM.YYYY) — NBK doesn't publish on weekends/
+    # holidays, so walk backwards a few days until we hit one that has data.
+    for days_back in range(5):
+        date = (datetime.now() - timedelta(days=days_back)).strftime("%d.%m.%Y")
+        resp = requests.get(_NBK_FEED_URL, params={"fdate": date}, timeout=5)
+        resp.raise_for_status()
+        text = resp.text
+        if _parse_rate(text, "USD") and _parse_rate(text, "CNY"):
+            return text
+    return text  # last attempt's response, for the raw_snippet debug output
 
 
 def _parse_rate(text, code):
@@ -40,9 +54,7 @@ def rates_view(request):
         return JsonResponse(_RATES_CACHE["data"])
 
     try:
-        resp = requests.get(_NBK_FEED_URL, timeout=5)
-        resp.raise_for_status()
-        text = resp.text
+        text = _fetch_nbk_text()
 
         data = {
             "usd_kzt": _parse_rate(text, "USD"),
