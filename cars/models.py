@@ -2,6 +2,12 @@ from django.db import models
 
 
 class Vehicle(models.Model):
+    AVAILABILITY_CHOICES = [
+        ("in_stock", "В наличии"),
+        ("out_of_stock", "Нет в наличии"),
+        ("on_order", "На заказ"),
+    ]
+
     name = models.CharField(max_length=255, blank=True, default="")
     brand = models.CharField(max_length=120, blank=True, default="")
     model = models.CharField(max_length=120, blank=True, default="")
@@ -23,6 +29,11 @@ class Vehicle(models.Model):
         blank=True,
         help_text="Доп. фото галереи — список ссылок, например: "
                    '["https://.../1.jpg", "https://.../2.jpg"]'
+    )
+    availability = models.CharField(
+        max_length=20,
+        choices=AVAILABILITY_CHOICES,
+        default="in_stock",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
