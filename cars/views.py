@@ -52,6 +52,13 @@ def rates_view(request):
         if data["usd_kzt"] and data["cny_kzt"]:
             _RATES_CACHE["data"] = data
             _RATES_CACHE["fetched_at"] = now
+        else:
+            # Запрос прошёл (200 OK), но regex ничего не нашёл — значит
+            # формат фида отличается от ожидаемого. Кладём кусок сырого
+            # ответа в JSON, чтобы понять реальную структуру без похода
+            # в логи. Временно, убрать после починки парсинга.
+            data["raw_snippet"] = text[:1500]
+            print(f"[rates_view] parse miss, raw snippet: {text[:1500]!r}")
 
         return JsonResponse(data)
     except Exception as e:
