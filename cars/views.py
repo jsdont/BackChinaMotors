@@ -54,5 +54,11 @@ def rates_view(request):
             _RATES_CACHE["fetched_at"] = now
 
         return JsonResponse(data)
-    except Exception:
-        return JsonResponse({"usd_kzt": None, "cny_kzt": None}, status=502)
+    except Exception as e:
+        # печатаем в stdout, чтобы причина была видна в `fly logs` —
+        # раньше ошибка проглатывалась молча и логов вообще не было
+        print(f"[rates_view] NBK fetch failed: {type(e).__name__}: {e}")
+        return JsonResponse(
+            {"usd_kzt": None, "cny_kzt": None, "error": f"{type(e).__name__}: {e}"},
+            status=502,
+        )
