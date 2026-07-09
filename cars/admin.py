@@ -8,13 +8,16 @@ class VehicleAdminForm(forms.ModelForm):
     images = forms.CharField(
         widget=forms.Textarea(attrs={"rows": 4, "placeholder": "https://.../1.jpg\nhttps://.../2.jpg"}),
         required=False,
-        label="Images",
-        help_text="Просто вставьте ссылки на фото — по одной на строку.",
+        label="Фото галереи",
+        help_text="Вставьте ссылки на фото — по одной на строку. Превью появится ниже.",
     )
 
     class Meta:
         model = Vehicle
         fields = "__all__"
+
+    class Media:
+        js = ("cars/admin_image_preview.js",)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
