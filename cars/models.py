@@ -26,6 +26,37 @@ class Vehicle(models.Model):
         blank=True,
         help_text="Полная масса ТС в тоннах"
     )
+    wheel_formula = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Колёсная формула",
+        help_text="Например: 6x4"
+    )
+    gearbox = models.CharField(
+        max_length=60,
+        blank=True,
+        default="",
+        verbose_name="КПП",
+        help_text="Например: механика, автомат"
+    )
+    engine_power_hp = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Мощность двигателя, л.с."
+    )
+    load_capacity_t = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Грузоподъёмность, т"
+    )
+    max_speed_kmh = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Макс. скорость, км/ч"
+    )
     price_usd = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     price_cny = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     mileage_km = models.IntegerField(null=True, blank=True)
