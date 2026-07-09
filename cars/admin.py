@@ -29,7 +29,7 @@ class VehicleAdminForm(forms.ModelForm):
 @admin.register(Vehicle)
 class VehicleAdmin(admin.ModelAdmin):
     form = VehicleAdminForm
-    list_display = ("id", "brand", "model", "body_type", "year", "price_cny", "price_usd", "weight_t", "availability")
+    list_display = ("id", "name" ,"brand", "model", "body_type", "year", "price_cny", "price_usd", "weight_t", "availability")
     list_filter = ("availability", "body_type")
     search_fields = ("brand", "model", "body_type")
     list_per_page = 50
