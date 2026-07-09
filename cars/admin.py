@@ -33,4 +33,4 @@ class VehicleAdmin(admin.ModelAdmin):
     list_filter = ("availability", "body_type")
     search_fields = ("brand", "model", "body_type")
     list_per_page = 50
-    list_editable = ("weight_t", "availability")
+    list_editable = ("year", "price_cny", "price_usd", "weight_t", "availability")
