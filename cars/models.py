@@ -36,6 +36,12 @@ class Vehicle(models.Model):
         help_text="Доп. фото галереи — список ссылок, например: "
                    '["https://.../1.jpg", "https://.../2.jpg"]'
     )
+    tiktok_url = models.URLField(
+        blank=True,
+        default="",
+        verbose_name="Видео-обзор TikTok",
+        help_text="Ссылка на видео TikTok — покажется последним слайдом в галерее фото"
+    )
     availability = models.CharField(
         max_length=20,
         choices=AVAILABILITY_CHOICES,
