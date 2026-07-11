@@ -1,5 +1,5 @@
 from django.db import models
-from catalog.models import Product
+from cars.models import Vehicle
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -33,7 +33,7 @@ class CalculatorLead(models.Model):
 
 
     product = models.ForeignKey(
-        Product,
+        Vehicle,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -58,12 +58,8 @@ class CalculatorLead(models.Model):
 
 
     def save(self, *args, **kwargs):
-        if self.status == "won":
-            if not self.closed_at:
-                self.closed_at = timezone.now()
-
-            if self.product and not self.profit_snapshot:
-                self.profit_snapshot = self.product.profit
+        if self.status == "won" and not self.closed_at:
+            self.closed_at = timezone.now()
 
         super().save(*args, **kwargs)
 
