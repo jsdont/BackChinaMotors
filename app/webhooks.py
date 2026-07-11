@@ -6,9 +6,7 @@ from app.models import CalculatorLead
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
-from catalog.models import Product
-from django.contrib.auth.models import User, Group
-from django.db.models import Count
+from cars.models import Vehicle
 from django.contrib.auth import get_user_model
 
 def extract_calc_id(text: str):
@@ -107,8 +105,8 @@ def contacts_form(request):
 
     if product_id:
         try:
-            product = Product.objects.get(id=product_id)
-        except Product.DoesNotExist:
+            product = Vehicle.objects.get(id=product_id)
+        except Vehicle.DoesNotExist:
             product = None
 
     calc_id = extract_calc_id(message)

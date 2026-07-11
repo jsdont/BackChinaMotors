@@ -41,9 +41,9 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
     def product_link(self, obj):
         if obj.product:
             return format_html(
-                '<a href="/admin/catalog/product/{}/change/">{}</a>',
+                '<a href="/admin/cars/vehicle/{}/change/">{}</a>',
                 obj.product.id,
-                obj.product.title
+                str(obj.product)
             )
         return "-"
     product_link.short_description = "Product"
@@ -55,12 +55,12 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
             obj.status = "in_progress"
             obj.full_clean()
             obj.save()
-    
+
     def mark_as_won(self, request, queryset):
+        # profit_snapshot вводится вручную — у Vehicle нет поля "прибыль",
+        # в отличие от прежнего catalog.Product.
         for obj in queryset:
             obj.status = "won"
-            if obj.product:
-                obj.profit_snapshot = obj.product.profit
             obj.full_clean()
             obj.save()
 
@@ -122,7 +122,7 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
 
         top_products = (
             deals
-            .values("product__title")
+            .values("product__name")
             .annotate(
                 total_deals=Count("id"),
                 total_profit=Sum("profit_snapshot")

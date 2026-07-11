@@ -72,7 +72,7 @@ new Chart(document.getElementById("revenueChart"), {
     <tbody>
         {% for item in top_products %}
         <tr>
-            <td>{{ item.product__title }}</td>
+            <td>{{ item.product__name }}</td>
             <td>{{ item.total_deals }}</td>
             <td>{{ item.total_profit|default:0 }}</td>
         </tr>
