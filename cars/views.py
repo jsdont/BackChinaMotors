@@ -64,19 +64,9 @@ def rates_view(request):
         if data["usd_kzt"] and data["cny_kzt"]:
             _RATES_CACHE["data"] = data
             _RATES_CACHE["fetched_at"] = now
-        else:
-            # Запрос прошёл (200 OK), но regex ничего не нашёл — значит
-            # формат фида отличается от ожидаемого. Кладём кусок сырого
-            # ответа в JSON, чтобы понять реальную структуру без похода
-            # в логи. Временно, убрать после починки парсинга.
-            data["raw_snippet"] = text[:1500]
-            print(f"[rates_view] parse miss, raw snippet: {text[:1500]!r}")
 
         return JsonResponse(data)
     except Exception as e:
-        # печатаем в stdout, чтобы причина была видна в `fly logs` —
-        # раньше ошибка проглатывалась молча и логов вообще не было
-        print(f"[rates_view] NBK fetch failed: {type(e).__name__}: {e}")
         return JsonResponse(
             {"usd_kzt": None, "cny_kzt": None, "error": f"{type(e).__name__}: {e}"},
             status=502,
