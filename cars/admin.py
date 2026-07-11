@@ -25,7 +25,7 @@ class VehicleAdminForm(forms.ModelForm):
             "body_type": forms.TextInput(attrs={"style": "width: 16em"}),
             "wheel_formula": forms.TextInput(attrs={"style": "width: 6em"}),
             "gearbox": forms.TextInput(attrs={"style": "width: 10em"}),
-            "year": forms.NumberInput(attrs={"style": "width: 6em"}),
+            "year": forms.NumberInput(attrs={"style": "width: 4em"}),
             "weight_t": forms.NumberInput(attrs={"style": "width: 6em"}),
             "load_capacity_t": forms.NumberInput(attrs={"style": "width: 6em"}),
             "engine_power_hp": forms.NumberInput(attrs={"style": "width: 6em"}),
