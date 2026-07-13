@@ -34,9 +34,9 @@ class MyVehicleListingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
         fields = [
-            "id", "name", "brand", "model", "year", "body_type", "extra_info",
-            "weight_t", "wheel_formula", "gearbox", "engine_power_hp",
-            "load_capacity_t", "max_speed_kmh", "price_usd", "price_cny",
+            "id", "brand", "model", "year", "body_type", "category", "city",
+            "extra_info", "weight_t", "wheel_formula", "gearbox",
+            "engine_power_hp", "load_capacity_t", "price_kzt",
             "mileage_km", "image_url", "images", "is_approved", "created_at",
         ]
         read_only_fields = ["id", "is_approved", "created_at"]

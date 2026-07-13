@@ -190,7 +190,7 @@ class DealSerializer(serializers.ModelSerializer):
         v = obj.vehicle
         if not v:
             return None
-        return v.name or f"{v.brand} {v.model}".strip()
+        return v.body_type or f"{v.brand} {v.model}".strip()
 
 
 class DealCreateSerializer(serializers.Serializer):

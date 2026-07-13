@@ -122,7 +122,7 @@ class CalculatorLeadAdmin(admin.ModelAdmin):
 
         top_products = (
             deals
-            .values("product__name")
+            .values("product__body_type")
             .annotate(
                 total_deals=Count("id"),
                 total_profit=Sum("profit_snapshot")

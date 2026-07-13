@@ -11,7 +11,7 @@ MARGIN_CNY = Decimal("14000")
 # автоподстановки в калькулятор на сайте, не показывается покупателю).
 CNY_TO_USD = Decimal("7.2")
 
-# (name, brand, model, year, body_type, base_price_cny)
+# (title -> body_type, brand, model, year, category, base_price_cny)
 VEHICLES = [
     ("Бетоносмеситель Shacman X3000 10 м³ Евро 5", "Shacman", "X3000", None, "Миксер", "344000"),
     ("Манипулятор Shacman L3000 6.3т 4×2 Евро 5", "Shacman", "L3000", None, "Манипулятор", "284000"),
@@ -63,11 +63,11 @@ class Command(BaseCommand):
             )
 
             Vehicle.objects.create(
-                name=name,
+                body_type=name,
                 brand=brand,
                 model=model,
                 year=year,
-                body_type=body_type,
+                category=body_type,
                 price_cny=price_cny,
                 price_usd=price_usd,
             )
