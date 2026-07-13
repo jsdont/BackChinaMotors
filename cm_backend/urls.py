@@ -11,6 +11,11 @@ from core.views import (
     RegisterServiceView,
     RegisterBankView,
     RegisterPartnerView,
+    MyDealsView,
+    AssignedDealsView,
+    DealDetailView,
+    UpdateMyAssignmentView,
+    DealCommentsView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view
@@ -32,6 +37,12 @@ urlpatterns = [
     path("api/auth/register/service/", RegisterServiceView.as_view(), name="register_service"),
     path("api/auth/register/bank/", RegisterBankView.as_view(), name="register_bank"),
     path("api/auth/register/partner/", RegisterPartnerView.as_view(), name="register_partner"),
+
+    path("api/deals/my/", MyDealsView.as_view(), name="my_deals"),
+    path("api/deals/assigned/", AssignedDealsView.as_view(), name="assigned_deals"),
+    path("api/deals/<int:pk>/", DealDetailView.as_view(), name="deal_detail"),
+    path("api/deals/assignments/<int:pk>/", UpdateMyAssignmentView.as_view(), name="update_assignment"),
+    path("api/deals/<int:deal_id>/comments/", DealCommentsView.as_view(), name="deal_comments"),
 
     path("api/", include("app.urls")),
 ]
