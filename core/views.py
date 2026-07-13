@@ -32,6 +32,7 @@ def _register_response(user):
         "access": str(refresh.access_token),
         "role": user.role,
         "is_verified": user.is_verified,
+        "user_id": user.id,
     }, status=201)
 
 
