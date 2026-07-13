@@ -79,4 +79,6 @@ class PhoneTokenObtainPairSerializer(serializers.Serializer):
         return {
             "refresh": str(refresh),
             "access": str(refresh.access_token),
+            "role": user.role,
+            "is_verified": user.is_verified,
         }
