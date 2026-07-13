@@ -8,6 +8,9 @@ from .serializers import (
     PhoneTokenObtainPairSerializer,
     RegisterPersonSerializer,
     RegisterCompanySerializer,
+    RegisterServiceSerializer,
+    RegisterBankSerializer,
+    RegisterPartnerSerializer,
 )
 
 
@@ -38,6 +41,39 @@ class RegisterPersonView(generics.CreateAPIView):
 
 class RegisterCompanyView(generics.CreateAPIView):
     serializer_class = RegisterCompanySerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return _register_response(user)
+
+
+class RegisterServiceView(generics.CreateAPIView):
+    serializer_class = RegisterServiceSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return _register_response(user)
+
+
+class RegisterBankView(generics.CreateAPIView):
+    serializer_class = RegisterBankSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return _register_response(user)
+
+
+class RegisterPartnerView(generics.CreateAPIView):
+    serializer_class = RegisterPartnerSerializer
     permission_classes = [AllowAny]
 
     def create(self, request, *args, **kwargs):

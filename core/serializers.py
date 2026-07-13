@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 
-from .models import User, Client, Company
+from .models import User, Client, Company, ServiceProvider, Bank, Partner
 
 
 class RegisterPersonSerializer(serializers.Serializer):
@@ -53,6 +53,90 @@ class RegisterCompanySerializer(serializers.Serializer):
             company_name=validated_data["company_name"],
             bin=validated_data.get("bin") or "",
             address=validated_data.get("address") or "",
+        )
+        return user
+
+
+class RegisterServiceSerializer(serializers.Serializer):
+    # Брокер / СВХ / Лаборатория / Логист / Декларант — одна форма с
+    # выбором роли, как register_service.ejs в v32fix_work.
+    phone = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+    company_name = serializers.CharField()
+    bin = serializers.CharField(required=False, allow_blank=True, default="")
+    role_key = serializers.ChoiceField(choices=ServiceProvider.SERVICE_TYPE_CHOICES)
+
+    def validate_phone(self, value):
+        if User.objects.filter(phone=value).exists():
+            raise serializers.ValidationError("Такой телефон уже зарегистрирован.")
+        return value
+
+    def create(self, validated_data):
+        role_key = validated_data["role_key"]
+        user = User.objects.create_user(
+            phone=validated_data["phone"],
+            password=validated_data["password"],
+            role=f"SERVICE_{role_key}",
+        )
+        ServiceProvider.objects.create(
+            user=user,
+            service_type=role_key,
+            company_name=validated_data["company_name"],
+            bin=validated_data.get("bin") or "",
+        )
+        return user
+
+
+class RegisterBankSerializer(serializers.Serializer):
+    phone = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+    bank_name = serializers.CharField()
+    bik = serializers.CharField(required=False, allow_blank=True, default="")
+    address = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate_phone(self, value):
+        if User.objects.filter(phone=value).exists():
+            raise serializers.ValidationError("Такой телефон уже зарегистрирован.")
+        return value
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            phone=validated_data["phone"],
+            password=validated_data["password"],
+            role="BANK",
+        )
+        Bank.objects.create(
+            user=user,
+            bank_name=validated_data["bank_name"],
+            bik=validated_data.get("bik") or "",
+            address=validated_data.get("address") or "",
+        )
+        return user
+
+
+class RegisterPartnerSerializer(serializers.Serializer):
+    phone = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+    company_name = serializers.CharField()
+    country = serializers.CharField(required=False, allow_blank=True, default="China")
+    reg_no = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate_phone(self, value):
+        if User.objects.filter(phone=value).exists():
+            raise serializers.ValidationError("Такой телефон уже зарегистрирован.")
+        return value
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            phone=validated_data["phone"],
+            password=validated_data["password"],
+            role="PARTNER",
+        )
+        Partner.objects.create(
+            user=user,
+            company_name=validated_data["company_name"],
+            country=validated_data.get("country") or "China",
+            reg_no=validated_data.get("reg_no") or "",
         )
         return user
 

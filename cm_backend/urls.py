@@ -4,7 +4,14 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
-from core.views import PhoneTokenObtainPairView, RegisterPersonView, RegisterCompanyView
+from core.views import (
+    PhoneTokenObtainPairView,
+    RegisterPersonView,
+    RegisterCompanyView,
+    RegisterServiceView,
+    RegisterBankView,
+    RegisterPartnerView,
+)
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view
 
@@ -22,6 +29,9 @@ urlpatterns = [
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("api/auth/register/person/", RegisterPersonView.as_view(), name="register_person"),
     path("api/auth/register/company/", RegisterCompanyView.as_view(), name="register_company"),
+    path("api/auth/register/service/", RegisterServiceView.as_view(), name="register_service"),
+    path("api/auth/register/bank/", RegisterBankView.as_view(), name="register_bank"),
+    path("api/auth/register/partner/", RegisterPartnerView.as_view(), name="register_partner"),
 
     path("api/", include("app.urls")),
 ]
