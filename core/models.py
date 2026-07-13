@@ -36,6 +36,13 @@ class User(AbstractUser):
     ROLE_CHOICES = (
         ('CUSTOMER_PERSON', 'Клиент (физ. лицо)'),
         ('CUSTOMER_COMPANY', 'Клиент (юр. лицо)'),
+        ('SERVICE_BROKER', 'Брокер (СВХ)'),
+        ('SERVICE_SVH', 'СВХ'),
+        ('SERVICE_LAB', 'Лаборатория'),
+        ('SERVICE_LOGISTIC', 'Логист'),
+        ('SERVICE_DECLARANT', 'Декларант (граница)'),
+        ('BANK', 'Банк'),
+        ('PARTNER', 'Партнёр-продавец'),
         ('MANAGER', 'Manager'),
         ('ADMIN', 'Admin'),
     )
@@ -73,6 +80,52 @@ class Company(models.Model):
     company_name = models.CharField(max_length=255, verbose_name="Название компании")
     bin = models.CharField(max_length=12, blank=True, default="", verbose_name="БИН")
     address = models.CharField(max_length=500, blank=True, default="", verbose_name="Юридический адрес")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.company_name
+
+
+class ServiceProvider(models.Model):
+    # Общая карточка для СВХ-стороны процесса растаможки — брокер, СВХ,
+    # лаборатория, логист и декларант регистрируются одной формой с
+    # выбором service_type, как register_service.ejs в v32fix_work.
+    SERVICE_TYPE_CHOICES = (
+        ('BROKER', 'Брокер (СВХ)'),
+        ('SVH', 'СВХ'),
+        ('LAB', 'Лаборатория'),
+        ('LOGISTIC', 'Логист'),
+        ('DECLARANT', 'Декларант (граница)'),
+    )
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="service_profile")
+    service_type = models.CharField(max_length=20, choices=SERVICE_TYPE_CHOICES)
+    company_name = models.CharField(max_length=255, verbose_name="Название компании / ФИО")
+    bin = models.CharField(max_length=12, blank=True, default="", verbose_name="БИН")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.company_name} ({self.get_service_type_display()})"
+
+
+class Bank(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="bank_profile")
+    bank_name = models.CharField(max_length=255, verbose_name="Название банка")
+    bik = models.CharField(max_length=20, blank=True, default="", verbose_name="БИК")
+    address = models.CharField(max_length=500, blank=True, default="", verbose_name="Адрес")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.bank_name
+
+
+class Partner(models.Model):
+    # Партнёр-продавец (Китай) — загружает объявления техники, которые
+    # проходят модерацию админа, как в v32fix_work.
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="partner_profile")
+    company_name = models.CharField(max_length=255, verbose_name="Название компании")
+    country = models.CharField(max_length=100, blank=True, default="China", verbose_name="Страна")
+    reg_no = models.CharField(max_length=100, blank=True, default="", verbose_name="Рег. номер компании")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
