@@ -4,20 +4,50 @@ from datetime import datetime, timedelta
 
 import requests
 from django.http import JsonResponse
-from rest_framework import viewsets, filters
-from rest_framework.permissions import AllowAny
+from rest_framework import viewsets, filters, generics
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import Vehicle
-from .serializers import VehicleSerializer
+from .serializers import VehicleSerializer, MyVehicleListingSerializer
 
 
 class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Vehicle.objects.all().order_by("-id")
+    # Публичный каталог — только одобренные записи. Официальные позиции
+    # (owner пуст) одобрены по умолчанию; объявления клиентов появятся
+    # здесь только после модерации админом.
+    queryset = Vehicle.objects.filter(is_approved=True).order_by("-id")
     serializer_class = VehicleSerializer
     permission_classes = [AllowAny]
 
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["brand", "model", "year", "body_type"]
     ordering_fields = ["price_usd", "price_cny", "year", "id"]
+
+
+CUSTOMER_ROLES = ("CUSTOMER_PERSON", "CUSTOMER_COMPANY")
+
+
+class MyVehicleListingsView(generics.ListCreateAPIView):
+    """Клиент (физ./юр. лицо): список своих объявлений + подать новое."""
+    serializer_class = MyVehicleListingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Vehicle.objects.filter(owner=self.request.user).order_by("-created_at")
+
+    def perform_create(self, serializer):
+        if self.request.user.role not in CUSTOMER_ROLES:
+            raise PermissionDenied("Разместить объявление может только клиент (физ. или юр. лицо).")
+        serializer.save()
+
+
+class MyVehicleListingDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Клиент правит/удаляет своё объявление (не влияет на is_approved)."""
+    serializer_class = MyVehicleListingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Vehicle.objects.filter(owner=self.request.user)
 
 
 # nationalbank.kz doesn't send CORS headers, so the browser can't fetch it

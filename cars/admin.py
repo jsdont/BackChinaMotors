@@ -53,8 +53,15 @@ class VehicleAdminForm(forms.ModelForm):
 @admin.register(Vehicle)
 class VehicleAdmin(admin.ModelAdmin):
     form = VehicleAdminForm
-    list_display = ("id", "name" ,"brand", "model", "body_type", "year", "price_cny", "price_usd", "weight_t", "wheel_formula", "availability")
-    list_filter = ("availability", "body_type")
-    search_fields = ("brand", "model", "body_type")
+    list_display = ("id", "name", "brand", "model", "body_type", "year", "price_cny", "price_usd", "weight_t", "wheel_formula", "availability", "owner", "is_approved")
+    list_filter = ("availability", "body_type", "is_approved")
+    search_fields = ("brand", "model", "body_type", "owner__phone")
     list_per_page = 50
-    list_editable = ("year", "price_cny", "price_usd", "weight_t", "wheel_formula", "availability")
+    list_editable = ("year", "price_cny", "price_usd", "weight_t", "wheel_formula", "availability", "is_approved")
+
+    actions = ["approve_listings"]
+
+    def approve_listings(self, request, queryset):
+        updated = queryset.update(is_approved=True)
+        self.message_user(request, f"Одобрено объявлений: {updated}")
+    approve_listings.short_description = "Одобрить выбранные объявления"
