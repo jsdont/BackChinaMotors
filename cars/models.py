@@ -9,11 +9,29 @@ class Vehicle(models.Model):
         ("on_order", "На заказ"),
     ]
 
-    name = models.CharField(max_length=255, blank=True, default="")
     brand = models.CharField(max_length=120, blank=True, default="")
     model = models.CharField(max_length=120, blank=True, default="")
     year = models.PositiveIntegerField(null=True, blank=True)
-    body_type = models.CharField(max_length=120, blank=True, default="")
+    body_type = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        verbose_name="Название / модель",
+        help_text="Отображается как заголовок в каталоге и на странице техники",
+    )
+    category = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        verbose_name="Категория",
+        help_text="Тип техники, например: Самосвал, Тягач, Кран",
+    )
+    city = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        verbose_name="Город",
+    )
     extra_info = models.TextField(
         blank=True,
         default="",
@@ -53,13 +71,15 @@ class Vehicle(models.Model):
         blank=True,
         verbose_name="Грузоподъёмность, т"
     )
-    max_speed_kmh = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name="Макс. скорость, км/ч"
-    )
     price_usd = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     price_cny = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    price_kzt = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Цена, ₸",
+    )
     mileage_km = models.IntegerField(null=True, blank=True)
     image_url = models.URLField(blank=True, default="")
     images = models.JSONField(
@@ -102,5 +122,5 @@ class Vehicle(models.Model):
         ordering = ['-created_at']
 
     def __str__(self) -> str:
-        base = self.name or f"{self.brand} {self.model}".strip()
+        base = self.body_type or f"{self.brand} {self.model}".strip()
         return base or f"Vehicle #{self.pk}"

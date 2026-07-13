@@ -48,12 +48,12 @@ class Command(BaseCommand):
             image_url = str(row.get(c_image, "")).strip() if c_image else ""
 
             obj, is_created = Vehicle.objects.update_or_create(
-                name=name or f"{brand} {model}".strip(),
+                body_type=name or f"{brand} {model}".strip(),
                 defaults=dict(
                     brand=brand,
                     model=model,
                     year=int(year) if pd.notna(year) else None,
-                    body_type=body_type,
+                    category=body_type,
                     price_usd=float(price_usd) if pd.notna(price_usd) else None,
                     mileage_km=int(mileage_km) if pd.notna(mileage_km) else None,
                     image_url=image_url,

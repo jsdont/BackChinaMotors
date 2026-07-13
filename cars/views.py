@@ -3,10 +3,14 @@ import time
 from datetime import datetime, timedelta
 
 import requests
+from django.core.files.storage import default_storage
 from django.http import JsonResponse
-from rest_framework import viewsets, filters, generics
+from rest_framework import viewsets, filters, generics, status
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from .models import Vehicle
 from .serializers import VehicleSerializer, MyVehicleListingSerializer
 
@@ -20,8 +24,8 @@ class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
 
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["brand", "model", "year", "body_type"]
-    ordering_fields = ["price_usd", "price_cny", "year", "id"]
+    search_fields = ["brand", "model", "year", "body_type", "category", "city"]
+    ordering_fields = ["price_usd", "price_cny", "price_kzt", "year", "id"]
 
 
 CUSTOMER_ROLES = ("CUSTOMER_PERSON", "CUSTOMER_COMPANY")
@@ -48,6 +52,35 @@ class MyVehicleListingDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Vehicle.objects.filter(owner=self.request.user)
+
+
+class MyVehicleListingPhotosView(APIView):
+    """Загрузка фото (файлами) для своего объявления — сохраняются в Cloudinary,
+    ссылки добавляются в Vehicle.images (и image_url, если ещё пуст)."""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, pk):
+        try:
+            vehicle = Vehicle.objects.get(pk=pk, owner=request.user)
+        except Vehicle.DoesNotExist:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+
+        files = request.FILES.getlist("photos")
+        if not files:
+            return Response({"detail": "Файлы не переданы."}, status=status.HTTP_400_BAD_REQUEST)
+
+        urls = []
+        for f in files:
+            path = default_storage.save(f"listings/{f.name}", f)
+            urls.append(default_storage.url(path))
+
+        vehicle.images = [*vehicle.images, *urls]
+        if not vehicle.image_url:
+            vehicle.image_url = urls[0]
+        vehicle.save(update_fields=["images", "image_url"])
+
+        return Response(MyVehicleListingSerializer(vehicle).data)
 
 
 # nationalbank.kz doesn't send CORS headers, so the browser can't fetch it
