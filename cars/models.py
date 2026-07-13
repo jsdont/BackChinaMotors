@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -77,6 +78,23 @@ class Vehicle(models.Model):
         max_length=20,
         choices=AVAILABILITY_CHOICES,
         default="in_stock",
+    )
+    # Пусто — официальный каталог China Motors (как раньше). Заполнено —
+    # объявление, которое разместил клиент (физ. или юр. лицо) сам через
+    # личный кабинет; такие объявления не публикуются, пока не одобрены.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vehicle_listings",
+        verbose_name="Автор объявления",
+        help_text="Пусто — официальный каталог; заполнено — объявление клиента",
+    )
+    is_approved = models.BooleanField(
+        default=True,
+        verbose_name="Одобрено",
+        help_text="Объявления клиентов скрыты из публичного каталога, пока админ не одобрит",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
