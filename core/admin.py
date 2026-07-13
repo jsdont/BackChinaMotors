@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Client, Company, ServiceProvider, Bank, Partner
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment
 
 
 class ClientInline(admin.StackedInline):
@@ -98,3 +98,33 @@ class BankAdmin(admin.ModelAdmin):
 class PartnerAdmin(admin.ModelAdmin):
     list_display = ("company_name", "country", "reg_no", "user", "created_at")
     search_fields = ("company_name", "reg_no", "user__phone")
+
+
+class DealAssignmentInline(admin.TabularInline):
+    # Здесь админ назначает конкретного брокера/СВХ/лабораторию/логиста/
+    # декларанта/банк на сделку — выбор из выпадающего списка User
+    # (подпись "телефон (роль)" помогает найти нужного).
+    model = DealAssignment
+    extra = 1
+
+
+@admin.register(Deal)
+class DealAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "customer", "vehicle", "status", "is_paid", "created_at")
+    list_editable = ("status", "is_paid")
+    list_filter = ("status", "is_paid")
+    search_fields = ("title", "customer__phone")
+    inlines = [DealAssignmentInline]
+
+
+@admin.register(DealAssignment)
+class DealAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("deal", "role", "assigned_user", "status", "updated_at")
+    list_filter = ("role", "status")
+    search_fields = ("deal__title", "assigned_user__phone")
+
+
+@admin.register(Comment)
+class CommentAdmin(admin.ModelAdmin):
+    list_display = ("deal", "author", "text", "created_at")
+    search_fields = ("deal__title", "author__phone", "text")

@@ -152,14 +152,57 @@ class Deal(models.Model):
         ('COMPLETED', 'Завершена'),
     )
 
-    client = models.ForeignKey(Client, on_delete=models.CASCADE)
-    manager = models.ForeignKey(Manager, on_delete=models.SET_NULL, null=True)
-    title = models.CharField(max_length=255)
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES)
+    # Клиент — физ. или юр. лицо, оба хранятся как User (a не Client,
+    # чтобы сделку мог оформить и CUSTOMER_COMPANY).
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="deals_as_customer")
+    vehicle = models.ForeignKey(
+        "cars.Vehicle", on_delete=models.SET_NULL, null=True, blank=True, related_name="deals"
+    )
+    manager = models.ForeignKey(Manager, on_delete=models.SET_NULL, null=True, blank=True)
+    title = models.CharField(max_length=255, blank=True, default="")
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="AGREEMENT")
     total_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     is_paid = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title or f"Сделка #{self.pk}"
+
+
+class DealAssignment(models.Model):
+    # Кто из сервисных аккаунтов ведёт эту сделку на каждом этапе —
+    # аналог tasks/serviceAssignments в v32fix_work, только без карты и
+    # автоматических счетов (MVP).
+    ROLE_CHOICES = (
+        ('BROKER', 'Брокер (СВХ)'),
+        ('SVH', 'СВХ'),
+        ('LAB', 'Лаборатория'),
+        ('LOGISTIC', 'Логист'),
+        ('DECLARANT', 'Декларант (граница)'),
+        ('BANK', 'Банк'),
+    )
+    TASK_STATUS_CHOICES = (
+        ('PENDING', 'Ожидает'),
+        ('IN_PROGRESS', 'В работе'),
+        ('DONE', 'Завершено'),
+    )
+
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="assignments")
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    assigned_user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="deal_assignments"
+    )
+    status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default="PENDING")
+    note = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("deal", "role")
+
+    def __str__(self):
+        return f"{self.deal} — {self.get_role_display()}"
 
 
 class Document(models.Model):

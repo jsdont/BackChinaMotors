@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 
-from .models import User, Client, Company, ServiceProvider, Bank, Partner
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment
 
 
 class RegisterPersonSerializer(serializers.Serializer):
@@ -139,6 +139,91 @@ class RegisterPartnerSerializer(serializers.Serializer):
             reg_no=validated_data.get("reg_no") or "",
         )
         return user
+
+
+def _user_label(user):
+    if not user:
+        return None
+    profile = (
+        getattr(user, "client_profile", None)
+        or getattr(user, "company_profile", None)
+        or getattr(user, "service_profile", None)
+        or getattr(user, "bank_profile", None)
+        or getattr(user, "partner_profile", None)
+    )
+    name = None
+    if profile is not None:
+        name = getattr(profile, "full_name", None) or getattr(profile, "company_name", None) or getattr(profile, "bank_name", None)
+    return {"id": user.id, "phone": user.phone, "role": user.role, "name": name}
+
+
+class DealAssignmentSerializer(serializers.ModelSerializer):
+    assigned_user_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DealAssignment
+        fields = ["id", "deal", "role", "assigned_user", "assigned_user_info", "status", "note", "updated_at"]
+        read_only_fields = ["id", "deal", "role", "assigned_user", "updated_at"]
+
+    def get_assigned_user_info(self, obj):
+        return _user_label(obj.assigned_user)
+
+
+class DealSerializer(serializers.ModelSerializer):
+    assignments = DealAssignmentSerializer(many=True, read_only=True)
+    customer_info = serializers.SerializerMethodField()
+    vehicle_title = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Deal
+        fields = [
+            "id", "customer", "customer_info", "vehicle", "vehicle_title",
+            "title", "status", "total_price", "is_paid",
+            "created_at", "updated_at", "assignments",
+        ]
+        read_only_fields = ["id", "customer", "created_at", "updated_at", "assignments"]
+
+    def get_customer_info(self, obj):
+        return _user_label(obj.customer)
+
+    def get_vehicle_title(self, obj):
+        v = obj.vehicle
+        if not v:
+            return None
+        return v.name or f"{v.brand} {v.model}".strip()
+
+
+class DealCreateSerializer(serializers.Serializer):
+    vehicle_id = serializers.IntegerField(required=False, allow_null=True)
+    title = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def create(self, validated_data):
+        from cars.models import Vehicle
+
+        user = self.context["request"].user
+        vehicle = None
+        vehicle_id = validated_data.get("vehicle_id")
+        if vehicle_id:
+            try:
+                vehicle = Vehicle.objects.get(id=vehicle_id)
+            except Vehicle.DoesNotExist:
+                raise serializers.ValidationError({"vehicle_id": "Техника не найдена."})
+
+        title = validated_data.get("title") or (str(vehicle) if vehicle else "")
+        deal = Deal.objects.create(customer=user, vehicle=vehicle, title=title)
+        return deal
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    author_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Comment
+        fields = ["id", "deal", "author", "author_info", "text", "created_at"]
+        read_only_fields = ["id", "deal", "author", "author_info", "created_at"]
+
+    def get_author_info(self, obj):
+        return _user_label(obj.author)
 
 
 class PhoneTokenObtainPairSerializer(serializers.Serializer):
