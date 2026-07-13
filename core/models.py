@@ -34,7 +34,8 @@ class UserManager(BaseUserManager):
 
 class User(AbstractUser):
     ROLE_CHOICES = (
-        ('CLIENT', 'Client'),
+        ('CUSTOMER_PERSON', 'Клиент (физ. лицо)'),
+        ('CUSTOMER_COMPANY', 'Клиент (юр. лицо)'),
         ('MANAGER', 'Manager'),
         ('ADMIN', 'Admin'),
     )
@@ -43,6 +44,9 @@ class User(AbstractUser):
     email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=20, unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    # Регистрация сама по себе не даёт доступа — админ подтверждает
+    # аккаунт в Django admin (как в v32fix_work).
+    is_verified = models.BooleanField(default=False, verbose_name="Подтверждён")
 
     objects = UserManager()
 
@@ -55,12 +59,24 @@ class User(AbstractUser):
 
 
 class Client(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="client_profile")
     full_name = models.CharField(max_length=255)
+    iin = models.CharField(max_length=12, blank=True, default="", verbose_name="ИИН")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.full_name
+
+
+class Company(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="company_profile")
+    company_name = models.CharField(max_length=255, verbose_name="Название компании")
+    bin = models.CharField(max_length=12, blank=True, default="", verbose_name="БИН")
+    address = models.CharField(max_length=500, blank=True, default="", verbose_name="Юридический адрес")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.company_name
 
 
 class Manager(models.Model):
