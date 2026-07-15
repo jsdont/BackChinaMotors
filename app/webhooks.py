@@ -2,6 +2,7 @@ import json
 import requests
 import time
 import re
+import uuid
 from app.models import CalculatorLead
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -16,17 +17,23 @@ def extract_calc_id(text: str):
     return m.group(0) if m else None
 
 def send_to_telegram(text: str):
-    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": settings.TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML",
-    }
-
-
-    r = requests.post(url, json=payload, timeout=10)
-    print("TELEGRAM STATUS:", r.status_code)
-    print("TELEGRAM RESPONSE:", r.text)
+    # Не должно ронять запрос, оформивший заявку, если у Telegram
+    # проблемы (таймаут, неверный токен и т.п.) — заявка уже сохранена
+    # в CalculatorLead, доставка уведомления — best-effort.
+    try:
+        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": settings.TELEGRAM_CHAT_ID,
+            "text": text,
+            "parse_mode": "HTML",
+        }
+        r = requests.post(url, json=payload, timeout=10)
+        print("TELEGRAM STATUS:", r.status_code)
+        print("TELEGRAM RESPONSE:", r.text)
+        return r.ok
+    except Exception as e:
+        print("TELEGRAM ERROR:", e)
+        return False
 
 
 @csrf_exempt
@@ -95,10 +102,10 @@ def contacts_form(request):
     if "message" not in payload:
         return JsonResponse({"status": "ignored"})
 
-    name = payload.get("name", "—")
-    phone = payload.get("phone", "—")
-    message = payload.get("message", "—")
-    page_url = payload.get("page", "—").split("?")[0]
+    name = payload.get("name") or "—"
+    phone = payload.get("phone") or "—"
+    message = payload.get("message") or "—"
+    page_url = (payload.get("page") or "—").split("?")[0]
 
     product_id = payload.get("product_id")
     product = None
@@ -106,34 +113,41 @@ def contacts_form(request):
     if product_id:
         try:
             product = Vehicle.objects.get(id=product_id)
-        except Vehicle.DoesNotExist:
+        except (Vehicle.DoesNotExist, ValueError, TypeError):
             product = None
 
-    calc_id = extract_calc_id(message)
+    try:
+        calc_id = extract_calc_id(message)
+        manager = get_next_manager()
 
-    manager = get_next_manager()
+        # time.time() урезанный до секунд — при двух заявках в одну и ту же
+        # секунду (двойной клик, два разных посетителя) calc_id совпадал бы
+        # и CalculatorLead.objects.create() падал на unique-constraint (500).
+        # Добавляем случайный суффикс, чтобы коллизия была практически невозможна.
+        lead = CalculatorLead.objects.create(
+            calc_id=calc_id or f"CONTACT-{int(time.time())}-{uuid.uuid4().hex[:6]}",
+            source="contacts",
+            name=name,
+            phone=phone,
+            message=message,
+            page_url=page_url,
+            product=product,
+            manager=manager,
+        )
 
-    lead = CalculatorLead.objects.create(
-        calc_id=calc_id or "CONTACT-" + str(int(time.time())),
-        source="contacts",
-        name=name,
-        phone=phone,
-        message=message,
-        page_url=page_url,
-        product=product,
-        manager=manager,
-    )
+        text = (
+            "📨 <b>ЗАЯВКА — CONTACTS</b>\n\n"
+            f"<b>Имя:</b> {name}\n"
+            f"<b>Телефон:</b> {phone}\n\n"
+            f"<b>Сообщение:</b>\n{message}\n\n"
+            f"<b>Страница:</b> {page_url}\n"
+            f"<b>ID:</b> {lead.calc_id}"
+        )
 
-    text = (
-        "📨 <b>ЗАЯВКА — CONTACTS</b>\n\n"
-        f"<b>Имя:</b> {name}\n"
-        f"<b>Телефон:</b> {phone}\n\n"
-        f"<b>Сообщение:</b>\n{message}\n\n"
-        f"<b>Страница:</b> {page_url}\n"
-        f"<b>ID:</b> {lead.calc_id}"
-    )
-
-    send_to_telegram(text)
+        send_to_telegram(text)
+    except Exception as e:
+        print("CONTACTS FORM ERROR:", e)
+        return JsonResponse({"status": "error", "error": str(e)}, status=500)
 
     return JsonResponse({"status": "ok"})
 
