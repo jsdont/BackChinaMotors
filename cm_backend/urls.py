@@ -18,10 +18,14 @@ from core.views import (
     DealCommentsView,
 )
 from app.webhooks import tawk_webhook, contacts_form
-from cars.views import rates_view
+from cars.views import rates_view, sitemap_vehicles
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+
+    # Referenced from the frontend's robots.txt (Sitemap: ...) since only
+    # the backend knows the current catalog.
+    path("sitemap-vehicles.xml", sitemap_vehicles),
 
     # 🔹 tawk.to webhook
     path("api/tawk/webhook/", tawk_webhook),
