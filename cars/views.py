@@ -1,10 +1,11 @@
 import re
 import time
 from datetime import datetime, timedelta
+from xml.sax.saxutils import escape
 
 import requests
 from django.core.files.storage import default_storage
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from rest_framework import viewsets, filters, generics, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -134,3 +135,27 @@ def rates_view(request):
             {"usd_kzt": None, "cny_kzt": None, "error": f"{type(e).__name__}: {e}"},
             status=502,
         )
+
+
+def sitemap_vehicles(request):
+    """XML sitemap of every publicly listed vehicle, for search engines --
+    referenced from the frontend's robots.txt. Lives on the backend since
+    it's the only place that knows the current catalog."""
+    vehicles = Vehicle.objects.filter(is_approved=True).order_by("-id")
+
+    entries = []
+    for v in vehicles:
+        loc = escape(f"https://chinamotors.kz/product.html?id={v.id}")
+        lastmod = f"<lastmod>{v.created_at.date().isoformat()}</lastmod>" if v.created_at else ""
+        entries.append(
+            f"<url><loc>{loc}</loc>{lastmod}"
+            "<changefreq>weekly</changefreq><priority>0.8</priority></url>"
+        )
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        + "".join(entries) +
+        "</urlset>"
+    )
+    return HttpResponse(xml, content_type="application/xml")
