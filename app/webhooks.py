@@ -7,8 +7,33 @@ from app.models import CalculatorLead
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
+from django.core.cache import cache
 from cars.models import Vehicle
 from django.contrib.auth import get_user_model
+
+RATE_LIMIT_MAX_REQUESTS = 3
+RATE_LIMIT_WINDOW_SECONDS = 600  # 10 минут
+
+
+def get_client_ip(request):
+    # За прокси Fly.io реальный IP клиента приходит в X-Forwarded-For
+    # (первый адрес в списке), REMOTE_ADDR — фолбэк для прямых подключений.
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def is_rate_limited(ip: str) -> bool:
+    if not ip:
+        return False
+    cache_key = f"contacts_rate:{ip}"
+    request_count = cache.get(cache_key, 0)
+    if request_count >= RATE_LIMIT_MAX_REQUESTS:
+        return True
+    cache.set(cache_key, request_count + 1, RATE_LIMIT_WINDOW_SECONDS)
+    return False
+
 
 def extract_calc_id(text: str):
     if not text:
@@ -94,6 +119,12 @@ def contacts_form(request):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
+    if is_rate_limited(get_client_ip(request)):
+        return JsonResponse(
+            {"status": "error", "error": "Слишком много попыток. Попробуйте позже."},
+            status=429,
+        )
+
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
@@ -101,6 +132,12 @@ def contacts_form(request):
 
     if "message" not in payload:
         return JsonResponse({"status": "ignored"})
+
+    # Honeypot: скрытое на фронтенде поле, реальные пользователи его не
+    # заполняют. Тихо отвечаем "ok", не создавая лид и не уведомляя Telegram,
+    # чтобы бот не понял, что его отфильтровали.
+    if (payload.get("company") or "").strip():
+        return JsonResponse({"status": "ok"})
 
     name = payload.get("name") or "—"
     phone = payload.get("phone") or "—"
