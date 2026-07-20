@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document
 
 
 class ClientInline(admin.StackedInline):
@@ -108,13 +108,26 @@ class DealAssignmentInline(admin.TabularInline):
     extra = 1
 
 
+class PaymentInline(admin.TabularInline):
+    # Менеджер добавляет платежи по сделке — клиент видит их в кабинете.
+    model = Payment
+    extra = 1
+
+
+class DocumentInline(admin.TabularInline):
+    # Менеджер загружает документы (договор/ГТД/CMR/акт/фото) — клиент видит
+    # и скачивает их в кабинете. Файлы уходят в Cloudinary.
+    model = Document
+    extra = 1
+
+
 @admin.register(Deal)
 class DealAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "customer", "vehicle", "status", "is_paid", "created_at")
     list_editable = ("status", "is_paid")
     list_filter = ("status", "is_paid")
     search_fields = ("title", "customer__phone")
-    inlines = [DealAssignmentInline]
+    inlines = [DealAssignmentInline, PaymentInline, DocumentInline]
 
 
 @admin.register(DealAssignment)
@@ -128,3 +141,18 @@ class DealAssignmentAdmin(admin.ModelAdmin):
 class CommentAdmin(admin.ModelAdmin):
     list_display = ("deal", "author", "text", "created_at")
     search_fields = ("deal__title", "author__phone", "text")
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ("deal", "amount", "is_confirmed", "confirmed_by", "created_at")
+    list_editable = ("is_confirmed",)
+    list_filter = ("is_confirmed",)
+    search_fields = ("deal__title",)
+
+
+@admin.register(Document)
+class DocumentAdmin(admin.ModelAdmin):
+    list_display = ("deal", "type", "uploaded_by", "created_at")
+    list_filter = ("type",)
+    search_fields = ("deal__title",)

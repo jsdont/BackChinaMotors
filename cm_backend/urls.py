@@ -16,6 +16,8 @@ from core.views import (
     DealDetailView,
     UpdateMyAssignmentView,
     DealCommentsView,
+    DealPaymentsView,
+    DealDocumentsView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -47,6 +49,8 @@ urlpatterns = [
     path("api/deals/<int:pk>/", DealDetailView.as_view(), name="deal_detail"),
     path("api/deals/assignments/<int:pk>/", UpdateMyAssignmentView.as_view(), name="update_assignment"),
     path("api/deals/<int:deal_id>/comments/", DealCommentsView.as_view(), name="deal_comments"),
+    path("api/deals/<int:deal_id>/payments/", DealPaymentsView.as_view(), name="deal_payments"),
+    path("api/deals/<int:deal_id>/documents/", DealDocumentsView.as_view(), name="deal_documents"),
 
     path("api/", include("app.urls")),
 ]

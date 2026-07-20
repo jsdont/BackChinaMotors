@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenViewBase
 
-from .models import Deal, DealAssignment, Comment
+from .models import Deal, DealAssignment, Comment, Payment, Document
 from .serializers import (
     PhoneTokenObtainPairSerializer,
     RegisterPersonSerializer,
@@ -18,6 +18,8 @@ from .serializers import (
     DealCreateSerializer,
     DealAssignmentSerializer,
     CommentSerializer,
+    PaymentSerializer,
+    DocumentSerializer,
 )
 
 
@@ -181,3 +183,34 @@ class DealCommentsView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         deal = self._get_deal()
         serializer.save(deal=deal, author=self.request.user)
+
+
+def _get_participant_deal(user, deal_id):
+    """Достаёт сделку и проверяет, что пользователь — её участник (клиент,
+    исполнитель или админ). Иначе 404/403."""
+    deal = generics.get_object_or_404(Deal, pk=deal_id)
+    if not _is_deal_participant(user, deal):
+        raise PermissionDenied("Нет доступа к этой сделке.")
+    return deal
+
+
+class DealPaymentsView(generics.ListAPIView):
+    """Платежи по сделке — просмотр для участников сделки. Создаются менеджером
+    через Django admin (MVP)."""
+    serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        deal = _get_participant_deal(self.request.user, self.kwargs["deal_id"])
+        return Payment.objects.filter(deal=deal).order_by("created_at")
+
+
+class DealDocumentsView(generics.ListAPIView):
+    """Документы по сделке — просмотр/скачивание для участников сделки.
+    Загружаются менеджером через Django admin (MVP)."""
+    serializer_class = DocumentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        deal = _get_participant_deal(self.request.user, self.kwargs["deal_id"])
+        return Document.objects.filter(deal=deal).order_by("-created_at")

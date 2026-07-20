@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document
 
 
 class RegisterPersonSerializer(serializers.Serializer):
@@ -224,6 +224,46 @@ class CommentSerializer(serializers.ModelSerializer):
 
     def get_author_info(self, obj):
         return _user_label(obj.author)
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    """Платёж по сделке — только для чтения в кабинете. Создаются/подтверждаются
+    менеджером через Django admin (MVP)."""
+    confirmed_by_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Payment
+        fields = ["id", "deal", "amount", "is_confirmed", "confirmed_by_info", "created_at"]
+        read_only_fields = fields
+
+    def get_confirmed_by_info(self, obj):
+        return _user_label(obj.confirmed_by) if obj.confirmed_by_id else None
+
+
+class DocumentSerializer(serializers.ModelSerializer):
+    """Документ по сделке — для просмотра/скачивания клиентом. Загружаются
+    менеджером через Django admin (MVP). Файлы хранятся в Cloudinary, поэтому
+    file_url — это готовая абсолютная ссылка."""
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    file_url = serializers.SerializerMethodField()
+    uploaded_by_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Document
+        fields = ["id", "deal", "type", "type_display", "file_url", "uploaded_by_info", "created_at"]
+        read_only_fields = fields
+
+    def get_file_url(self, obj):
+        if not obj.file:
+            return None
+        url = obj.file.url
+        if url.startswith("http://") or url.startswith("https://"):
+            return url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
+    def get_uploaded_by_info(self, obj):
+        return _user_label(obj.uploaded_by) if obj.uploaded_by_id else None
 
 
 class PhoneTokenObtainPairSerializer(serializers.Serializer):
