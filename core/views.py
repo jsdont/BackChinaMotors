@@ -1,3 +1,4 @@
+from django.db.models import Count
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -20,7 +21,9 @@ from .serializers import (
     CommentSerializer,
     PaymentSerializer,
     DocumentSerializer,
+    DealStatusUpdateSerializer,
 )
+from .permissions import IsManager
 
 
 class PhoneTokenObtainPairView(TokenViewBase):
@@ -214,3 +217,58 @@ class DealDocumentsView(generics.ListAPIView):
     def get_queryset(self):
         deal = _get_participant_deal(self.request.user, self.kwargs["deal_id"])
         return Document.objects.filter(deal=deal).order_by("-created_at")
+
+
+# =========================================================
+# КАБИНЕТ МЕНЕДЖЕРА — оперативный обзор: все сделки, смена этапа, инбокс
+# заявок и сводка по счётчикам. Доступ только менеджеру/админу.
+# =========================================================
+
+
+class ManagerDealsView(generics.ListAPIView):
+    """Все сделки (не только свои) с необязательным фильтром по этапу:
+    ?status=CUSTOMS."""
+    serializer_class = DealSerializer
+    permission_classes = [IsManager]
+
+    def get_queryset(self):
+        qs = Deal.objects.all().order_by("-created_at")
+        status = self.request.query_params.get("status")
+        if status:
+            qs = qs.filter(status=status)
+        return qs
+
+
+class ManagerDealStatusView(generics.UpdateAPIView):
+    """Менеджер меняет этап сделки (status) и отметку об оплате (is_paid)."""
+    serializer_class = DealStatusUpdateSerializer
+    permission_classes = [IsManager]
+    queryset = Deal.objects.all()
+    http_method_names = ["patch"]
+
+
+class ManagerStatsView(APIView):
+    """Счётчики для дашборда менеджера: сделки по этапам и открытые заявки."""
+    permission_classes = [IsManager]
+
+    def get(self, request):
+        from app.models import CalculatorLead
+
+        by_status = {code: 0 for code, _ in Deal.STATUS_CHOICES}
+        for row in Deal.objects.values("status").annotate(n=Count("id")):
+            by_status[row["status"]] = row["n"]
+
+        total_deals = sum(by_status.values())
+        completed = by_status.get("COMPLETED", 0)
+
+        leads_qs = CalculatorLead.objects.all()
+        open_leads = leads_qs.exclude(status__in=["won", "lost"]).count()
+
+        return Response({
+            "deals_total": total_deals,
+            "deals_active": total_deals - completed,
+            "deals_completed": completed,
+            "deals_by_status": by_status,
+            "leads_total": leads_qs.count(),
+            "leads_open": open_leads,
+        })

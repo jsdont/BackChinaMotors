@@ -59,3 +59,68 @@ class DealPaymentsDocumentsAPITest(TestCase):
     def test_anonymous_denied(self):
         res = APIClient().get(f"/api/deals/{self.deal.id}/payments/")
         self.assertEqual(res.status_code, 401)
+
+
+class ManagerCabinetAPITest(TestCase):
+    """Менеджер видит все сделки/заявки и меняет этап; клиент — нет."""
+
+    def setUp(self):
+        self.customer = User.objects.create_user(
+            phone="+77000001001", password="pass12345", role="CUSTOMER_PERSON"
+        )
+        self.customer2 = User.objects.create_user(
+            phone="+77000001002", password="pass12345", role="CUSTOMER_PERSON"
+        )
+        self.manager = User.objects.create_user(
+            phone="+77000001003", password="pass12345", role="MANAGER"
+        )
+        self.deal1 = Deal.objects.create(customer=self.customer, title="Сделка 1", status="AGREEMENT")
+        self.deal2 = Deal.objects.create(customer=self.customer2, title="Сделка 2", status="CUSTOMS")
+
+    def _client_for(self, user):
+        c = APIClient()
+        c.force_authenticate(user=user)
+        return c
+
+    def test_manager_sees_all_deals(self):
+        res = self._client_for(self.manager).get("/api/manager/deals/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 2)
+
+    def test_manager_deals_status_filter(self):
+        res = self._client_for(self.manager).get("/api/manager/deals/?status=CUSTOMS")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(res.data[0]["title"], "Сделка 2")
+
+    def test_customer_cannot_access_manager_deals(self):
+        res = self._client_for(self.customer).get("/api/manager/deals/")
+        self.assertEqual(res.status_code, 403)
+
+    def test_manager_updates_deal_status(self):
+        res = self._client_for(self.manager).patch(
+            f"/api/manager/deals/{self.deal1.id}/status/", {"status": "CONTRACT"}, format="json"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.deal1.refresh_from_db()
+        self.assertEqual(self.deal1.status, "CONTRACT")
+
+    def test_customer_cannot_update_deal_status(self):
+        res = self._client_for(self.customer).patch(
+            f"/api/manager/deals/{self.deal1.id}/status/", {"status": "COMPLETED"}, format="json"
+        )
+        self.assertEqual(res.status_code, 403)
+        self.deal1.refresh_from_db()
+        self.assertEqual(self.deal1.status, "AGREEMENT")
+
+    def test_manager_stats(self):
+        res = self._client_for(self.manager).get("/api/manager/stats/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["deals_total"], 2)
+        self.assertEqual(res.data["deals_active"], 2)
+        self.assertEqual(res.data["deals_completed"], 0)
+        self.assertEqual(res.data["deals_by_status"]["CUSTOMS"], 1)
+
+    def test_manager_leads_requires_manager(self):
+        self.assertEqual(self._client_for(self.customer).get("/api/manager/leads/").status_code, 403)
+        self.assertEqual(self._client_for(self.manager).get("/api/manager/leads/").status_code, 200)

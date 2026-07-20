@@ -18,6 +18,9 @@ from core.views import (
     DealCommentsView,
     DealPaymentsView,
     DealDocumentsView,
+    ManagerDealsView,
+    ManagerDealStatusView,
+    ManagerStatsView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -51,6 +54,11 @@ urlpatterns = [
     path("api/deals/<int:deal_id>/comments/", DealCommentsView.as_view(), name="deal_comments"),
     path("api/deals/<int:deal_id>/payments/", DealPaymentsView.as_view(), name="deal_payments"),
     path("api/deals/<int:deal_id>/documents/", DealDocumentsView.as_view(), name="deal_documents"),
+
+    # Кабинет менеджера
+    path("api/manager/deals/", ManagerDealsView.as_view(), name="manager_deals"),
+    path("api/manager/deals/<int:pk>/status/", ManagerDealStatusView.as_view(), name="manager_deal_status"),
+    path("api/manager/stats/", ManagerStatsView.as_view(), name="manager_stats"),
 
     path("api/", include("app.urls")),
 ]

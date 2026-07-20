@@ -266,6 +266,15 @@ class DocumentSerializer(serializers.ModelSerializer):
         return _user_label(obj.uploaded_by) if obj.uploaded_by_id else None
 
 
+class DealStatusUpdateSerializer(serializers.ModelSerializer):
+    """Менеджер меняет этап сделки (и отметку об оплате) из веб-кабинета."""
+
+    class Meta:
+        model = Deal
+        fields = ["id", "status", "is_paid"]
+        read_only_fields = ["id"]
+
+
 class PhoneTokenObtainPairSerializer(serializers.Serializer):
     phone = serializers.CharField()
     password = serializers.CharField(write_only=True)
