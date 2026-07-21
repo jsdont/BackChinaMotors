@@ -267,11 +267,13 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
 class DealStatusUpdateSerializer(serializers.ModelSerializer):
-    """Менеджер меняет этап сделки (и отметку об оплате) из веб-кабинета."""
+    """Менеджер редактирует сделку из веб-кабинета: этап, отметку об оплате
+    и стоимость сделки (для финансового отчёта). Все поля необязательные —
+    можно прислать только то, что меняется (PATCH)."""
 
     class Meta:
         model = Deal
-        fields = ["id", "status", "is_paid"]
+        fields = ["id", "status", "is_paid", "total_price"]
         read_only_fields = ["id"]
 
 

@@ -127,6 +127,55 @@ class ManagerCabinetAPITest(TestCase):
         self.assertEqual(self._client_for(self.customer).get("/api/manager/leads/").status_code, 403)
         self.assertEqual(self._client_for(self.manager).get("/api/manager/leads/").status_code, 200)
 
+    def test_manager_can_set_total_price(self):
+        res = self._client_for(self.manager).patch(
+            f"/api/manager/deals/{self.deal1.id}/status/", {"total_price": "5000000.00"}, format="json"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.deal1.refresh_from_db()
+        self.assertEqual(self.deal1.total_price, Decimal("5000000.00"))
+
+
+class ManagerFinanceReportTest(TestCase):
+    """Финансовый отчёт: стоимость сделок против полученных/ожидаемых платежей."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000004001", password="p", role="MANAGER")
+        self.customer = User.objects.create_user(phone="+77000004002", password="p", role="CUSTOMER_PERSON")
+        # Сделка с ценой и частичной оплатой
+        self.d1 = Deal.objects.create(customer=self.customer, title="Сделка 1", total_price=Decimal("10000000.00"))
+        Payment.objects.create(deal=self.d1, amount=Decimal("6000000.00"), is_confirmed=True)
+        Payment.objects.create(deal=self.d1, amount=Decimal("2000000.00"), is_confirmed=False)
+        # Сделка без цены
+        self.d2 = Deal.objects.create(customer=self.customer, title="Сделка 2")
+
+    def _mgr(self):
+        c = APIClient()
+        c.force_authenticate(user=self.manager)
+        return c
+
+    def test_finance_report_totals(self):
+        res = self._mgr().get("/api/manager/finance/")
+        self.assertEqual(res.status_code, 200)
+        s = res.data["summary"]
+        self.assertEqual(s["deals_total"], 2)
+        self.assertEqual(s["deals_with_price"], 1)
+        self.assertEqual(Decimal(s["total_value"]), Decimal("10000000.00"))
+        self.assertEqual(Decimal(s["total_received"]), Decimal("6000000.00"))
+        self.assertEqual(Decimal(s["total_pending"]), Decimal("2000000.00"))
+        self.assertEqual(Decimal(s["total_outstanding"]), Decimal("4000000.00"))
+
+    def test_finance_report_per_deal(self):
+        res = self._mgr().get("/api/manager/finance/")
+        row = next(r for r in res.data["deals"] if r["id"] == self.d1.id)
+        self.assertEqual(Decimal(row["received"]), Decimal("6000000.00"))
+        self.assertEqual(Decimal(row["balance"]), Decimal("4000000.00"))
+
+    def test_finance_requires_manager(self):
+        c = APIClient()
+        c.force_authenticate(user=self.customer)
+        self.assertEqual(c.get("/api/manager/finance/").status_code, 403)
+
 
 _TMP_MEDIA = tempfile.mkdtemp()
 

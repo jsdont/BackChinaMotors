@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db.models import Count
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
@@ -25,6 +27,7 @@ from .serializers import (
     PaymentCreateSerializer,
     DocumentCreateSerializer,
 )
+from .serializers import _user_label
 from .permissions import IsManager
 from rest_framework.parsers import MultiPartParser, FormParser
 
@@ -274,6 +277,68 @@ class ManagerStatsView(APIView):
             "deals_by_status": by_status,
             "leads_total": leads_qs.count(),
             "leads_open": open_leads,
+        })
+
+
+class ManagerFinanceView(APIView):
+    """Финансовый отчёт по сделкам: стоимость сделки против фактически
+    полученных денег (подтверждённые платежи). Прибыль/расходы НЕ считаем —
+    в системе нет данных о себестоимости, поэтому отчёт строится только на
+    реальных цифрах: стоимость сделки и поступившие/ожидаемые платежи."""
+    permission_classes = [IsManager]
+
+    def get(self, request):
+        from django.db.models import Sum, Q
+
+        deals = (
+            Deal.objects.all()
+            .select_related("customer")
+            .annotate(
+                received=Sum("payment__amount", filter=Q(payment__is_confirmed=True)),
+                pending=Sum("payment__amount", filter=Q(payment__is_confirmed=False)),
+            )
+            .order_by("-created_at")
+        )
+
+        status_labels = dict(Deal.STATUS_CHOICES)
+        rows = []
+        total_value = Decimal("0")
+        total_received = Decimal("0")
+        total_pending = Decimal("0")
+        deals_with_price = 0
+
+        for d in deals:
+            value = d.total_price or Decimal("0")
+            received = d.received or Decimal("0")
+            pending = d.pending or Decimal("0")
+            balance = value - received
+            if d.total_price is not None:
+                deals_with_price += 1
+                total_value += value
+            total_received += received
+            total_pending += pending
+            rows.append({
+                "id": d.id,
+                "title": d.title or f"Сделка #{d.id}",
+                "customer": _user_label(d.customer),
+                "status": d.status,
+                "status_display": status_labels.get(d.status, d.status),
+                "total_price": value,
+                "received": received,
+                "pending": pending,
+                "balance": balance,
+            })
+
+        return Response({
+            "summary": {
+                "deals_total": len(rows),
+                "deals_with_price": deals_with_price,
+                "total_value": total_value,
+                "total_received": total_received,
+                "total_pending": total_pending,
+                "total_outstanding": total_value - total_received,
+            },
+            "deals": rows,
         })
 
 
