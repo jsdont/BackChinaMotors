@@ -10,6 +10,7 @@ from rest_framework import status
 from .serializers import LeadStatusUpdateSerializer
 from core.permissions import IsManager
 from core.models import Deal, Manager, Client
+from core.activity import log_activity
 
 User = get_user_model()
 
@@ -81,6 +82,8 @@ def convert_lead_to_deal(request, pk):
         if lead.status == "new":
             lead.status = "in_progress"
         lead.save()
+
+        log_activity(deal, request.user, f"Сделка создана из заявки {lead.calc_id}")
 
     return Response({
         "deal_id": deal.id,

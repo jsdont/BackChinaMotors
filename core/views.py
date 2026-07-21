@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenViewBase
 
-from .models import Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia
+from .models import Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity
 from .serializers import (
     PhoneTokenObtainPairSerializer,
     RegisterPersonSerializer,
@@ -30,9 +30,11 @@ from .serializers import (
     DealStageSerializer,
     DealMediaSerializer,
     DealMediaCreateSerializer,
+    DealActivitySerializer,
 )
 from .serializers import _user_label
 from .permissions import IsManager
+from .activity import log_activity
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 
@@ -139,6 +141,7 @@ class MyDealsView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         deal = serializer.save()
+        log_activity(deal, request.user, "Сделка создана клиентом")
         return Response(DealSerializer(deal).data, status=201)
 
 
@@ -251,6 +254,17 @@ class DealMediaView(generics.ListAPIView):
         return deal.media.all()
 
 
+class DealActivityView(generics.ListAPIView):
+    """Лог изменений — участники сделки (в т.ч. клиент). Внутренние события
+    (расходы) клиенту не показываются."""
+    serializer_class = DealActivitySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        deal = _get_participant_deal(self.request.user, self.kwargs["deal_id"])
+        return deal.activities.filter(internal=False)
+
+
 # =========================================================
 # КАБИНЕТ МЕНЕДЖЕРА — оперативный обзор: все сделки, смена этапа, инбокс
 # заявок и сводка по счётчикам. Доступ только менеджеру/админу.
@@ -277,6 +291,21 @@ class ManagerDealStatusView(generics.UpdateAPIView):
     permission_classes = [IsManager]
     queryset = Deal.objects.all()
     http_method_names = ["patch"]
+
+    def perform_update(self, serializer):
+        deal = serializer.instance
+        old_status, old_paid, old_price = deal.status, deal.is_paid, deal.total_price
+        labels = dict(Deal.STATUS_CHOICES)
+        obj = serializer.save()
+        data = serializer.validated_data
+        if "status" in data and obj.status != old_status:
+            log_activity(obj, self.request.user,
+                         f"Этап сделки изменён: {labels.get(old_status, old_status)} → {obj.get_status_display()}")
+        if "is_paid" in data and obj.is_paid != old_paid:
+            log_activity(obj, self.request.user,
+                         "Отметка об оплате: " + ("оплачено" if obj.is_paid else "снята"))
+        if "total_price" in data and obj.total_price != old_price:
+            log_activity(obj, self.request.user, f"Указана стоимость сделки: {obj.total_price} ₸")
 
 
 class ManagerStatsView(APIView):
@@ -390,7 +419,9 @@ class ManagerDealPaymentsCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
         confirmed = serializer.validated_data.get("is_confirmed", False)
-        serializer.save(deal=deal, confirmed_by=self.request.user if confirmed else None)
+        obj = serializer.save(deal=deal, confirmed_by=self.request.user if confirmed else None)
+        log_activity(deal, self.request.user,
+                     f"Добавлен платёж {obj.amount} ₸ ({'подтверждён' if obj.is_confirmed else 'ожидает'})")
 
 
 class ManagerDealDocumentsCreateView(generics.CreateAPIView):
@@ -401,7 +432,8 @@ class ManagerDealDocumentsCreateView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
-        serializer.save(deal=deal, uploaded_by=self.request.user)
+        obj = serializer.save(deal=deal, uploaded_by=self.request.user)
+        log_activity(deal, self.request.user, f"Загружен документ: {obj.get_type_display()}")
 
 
 class ManagerDealExpensesView(generics.ListCreateAPIView):
@@ -415,7 +447,9 @@ class ManagerDealExpensesView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
-        serializer.save(deal=deal, created_by=self.request.user)
+        obj = serializer.save(deal=deal, created_by=self.request.user)
+        log_activity(deal, self.request.user,
+                     f"Добавлен расход: {obj.get_category_display()} {obj.amount} ₸", internal=True)
 
 
 class ManagerExpenseDeleteView(generics.DestroyAPIView):
@@ -423,6 +457,12 @@ class ManagerExpenseDeleteView(generics.DestroyAPIView):
     permission_classes = [IsManager]
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
+
+    def perform_destroy(self, instance):
+        deal = instance.deal
+        log_activity(deal, self.request.user,
+                     f"Удалён расход: {instance.get_category_display()} {instance.amount} ₸", internal=True)
+        instance.delete()
 
 
 class ManagerDealStagesCreateView(generics.ListCreateAPIView):
@@ -438,7 +478,8 @@ class ManagerDealStagesCreateView(generics.ListCreateAPIView):
         deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
         last = deal.stages.order_by("-order").first()
         next_order = (last.order + 1) if last else 0
-        serializer.save(deal=deal, order=next_order)
+        obj = serializer.save(deal=deal, order=next_order)
+        log_activity(deal, self.request.user, f"Добавлен этап плана: {obj.title}")
 
 
 class ManagerDealStageDetailView(generics.UpdateAPIView, generics.DestroyAPIView):
@@ -447,6 +488,17 @@ class ManagerDealStageDetailView(generics.UpdateAPIView, generics.DestroyAPIView
     permission_classes = [IsManager]
     queryset = DealStage.objects.all()
     http_method_names = ["patch", "delete"]
+
+    def perform_update(self, serializer):
+        old_done = serializer.instance.is_done
+        obj = serializer.save()
+        if "is_done" in serializer.validated_data and obj.is_done != old_done:
+            log_activity(obj.deal, self.request.user,
+                         f"Этап плана {'выполнен' if obj.is_done else 'снят'}: {obj.title}")
+
+    def perform_destroy(self, instance):
+        log_activity(instance.deal, self.request.user, f"Удалён этап плана: {instance.title}")
+        instance.delete()
 
 
 class ManagerDealMediaCreateView(generics.ListCreateAPIView):
@@ -463,7 +515,9 @@ class ManagerDealMediaCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
-        serializer.save(deal=deal, uploaded_by=self.request.user)
+        obj = serializer.save(deal=deal, uploaded_by=self.request.user)
+        log_activity(deal, self.request.user,
+                     f"Добавлено {'видео' if obj.video_url else 'фото'} в галерею")
 
 
 class ManagerDealMediaDeleteView(generics.DestroyAPIView):
@@ -471,3 +525,18 @@ class ManagerDealMediaDeleteView(generics.DestroyAPIView):
     permission_classes = [IsManager]
     queryset = DealMedia.objects.all()
     serializer_class = DealMediaSerializer
+
+    def perform_destroy(self, instance):
+        deal = instance.deal
+        log_activity(deal, self.request.user, "Удалён файл из галереи")
+        instance.delete()
+
+
+class ManagerDealActivityView(generics.ListAPIView):
+    """Полный лог изменений сделки — только менеджер (видит и внутренние
+    события, например расходы)."""
+    serializer_class = DealActivitySerializer
+    permission_classes = [IsManager]
+
+    def get_queryset(self):
+        return DealActivity.objects.filter(deal_id=self.kwargs["deal_id"])

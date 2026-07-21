@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity
 
 
 class RegisterPersonSerializer(serializers.Serializer):
@@ -339,6 +339,19 @@ class DealMediaSerializer(serializers.ModelSerializer):
 
     def get_url(self, obj):
         return _media_url(obj)
+
+
+class DealActivitySerializer(serializers.ModelSerializer):
+    """Событие лога изменений по сделке (только чтение)."""
+    actor_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DealActivity
+        fields = ["id", "deal", "actor_info", "text", "internal", "created_at"]
+        read_only_fields = fields
+
+    def get_actor_info(self, obj):
+        return _user_label(obj.actor) if obj.actor_id else None
 
 
 class DealMediaCreateSerializer(serializers.ModelSerializer):

@@ -375,6 +375,63 @@ class DealMediaGalleryTest(TestCase):
         self.assertEqual(self.DealMedia.objects.count(), 0)
 
 
+class DealActivityLogTest(TestCase):
+    """Лог изменений: действия менеджера пишутся в лог; клиент видит обычные
+    события, но НЕ внутренние (расходы); чужой не видит ничего."""
+
+    def setUp(self):
+        from .models import DealActivity
+        self.DealActivity = DealActivity
+        self.manager = User.objects.create_user(phone="+77000008001", password="p", role="MANAGER")
+        self.customer = User.objects.create_user(phone="+77000008002", password="p", role="CUSTOMER_PERSON")
+        self.other = User.objects.create_user(phone="+77000008003", password="p", role="CUSTOMER_PERSON")
+        self.deal = Deal.objects.create(customer=self.customer, title="Сделка", status="AGREEMENT")
+
+    def _c(self, u):
+        c = APIClient(); c.force_authenticate(user=u); return c
+
+    def test_status_change_is_logged(self):
+        self._c(self.manager).patch(f"/api/manager/deals/{self.deal.id}/status/", {"status": "CONTRACT"}, format="json")
+        acts = self.DealActivity.objects.filter(deal=self.deal)
+        self.assertEqual(acts.count(), 1)
+        a = acts.first()
+        self.assertIn("Этап сделки изменён", a.text)
+        self.assertEqual(a.actor_id, self.manager.id)
+        self.assertFalse(a.internal)
+
+    def test_payment_and_document_logged_visible_to_client(self):
+        self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/payments/", {"amount": "100000", "is_confirmed": True}, format="json")
+        res = self._c(self.customer).get(f"/api/deals/{self.deal.id}/activity/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 1)
+        self.assertIn("Добавлен платёж", res.data[0]["text"])
+
+    def test_expense_logged_internal_hidden_from_client(self):
+        self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/expenses/", {"category": "PURCHASE", "amount": "4000000"}, format="json")
+        # менеджер видит внутреннее событие
+        mgr = self._c(self.manager).get(f"/api/manager/deals/{self.deal.id}/activity/")
+        self.assertEqual(len(mgr.data), 1)
+        self.assertTrue(mgr.data[0]["internal"])
+        # клиент — нет
+        cust = self._c(self.customer).get(f"/api/deals/{self.deal.id}/activity/")
+        self.assertEqual(len(cust.data), 0)
+
+    def test_stage_toggle_logged(self):
+        s = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/stages/", {"title": "Проверка"}, format="json")
+        sid = s.data["id"]
+        self._c(self.manager).patch(f"/api/manager/stages/{sid}/", {"is_done": True}, format="json")
+        texts = list(self.DealActivity.objects.filter(deal=self.deal).values_list("text", flat=True))
+        self.assertTrue(any("Добавлен этап плана" in t for t in texts))
+        self.assertTrue(any("Этап плана выполнен" in t for t in texts))
+
+    def test_non_participant_denied(self):
+        self.DealActivity.objects.create(deal=self.deal, text="x", actor=self.manager)
+        self.assertEqual(self._c(self.other).get(f"/api/deals/{self.deal.id}/activity/").status_code, 403)
+
+    def test_client_cannot_use_manager_activity(self):
+        self.assertEqual(self._c(self.customer).get(f"/api/manager/deals/{self.deal.id}/activity/").status_code, 403)
+
+
 @override_settings(STORAGES={
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},

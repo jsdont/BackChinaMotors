@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity
 
 
 class ClientInline(admin.StackedInline):
@@ -187,3 +187,10 @@ class ExpenseAdmin(admin.ModelAdmin):
 class DealMediaAdmin(admin.ModelAdmin):
     list_display = ("deal", "caption", "video_url", "uploaded_by", "created_at")
     search_fields = ("deal__title", "caption")
+
+
+@admin.register(DealActivity)
+class DealActivityAdmin(admin.ModelAdmin):
+    list_display = ("deal", "text", "actor", "internal", "created_at")
+    list_filter = ("internal",)
+    search_fields = ("deal__title", "text")

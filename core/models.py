@@ -297,6 +297,23 @@ class DealMedia(models.Model):
         return self.caption or (self.video_url or "media")
 
 
+class DealActivity(models.Model):
+    # Лог изменений по сделке (аудит): кто и что сделал. Пишется из вьюх в
+    # момент действия. internal=True — событие видно только менеджеру
+    # (например, расходы), остальное видит и клиент (прозрачность).
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="activities")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    text = models.CharField(max_length=500)
+    internal = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.text
+
+
 class Lead(models.Model):
     STATUS_CHOICES = (
         ('NEW', 'Новая'),
