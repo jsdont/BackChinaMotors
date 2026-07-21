@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .models import User, Deal, Payment, Document, Expense
+from .models import User, Deal, Payment, Document, Expense, DealStage
 
 
 class DealPaymentsDocumentsAPITest(TestCase):
@@ -242,6 +242,69 @@ class ManagerExpensesTest(TestCase):
         res = self._mgr().get("/api/manager/finance/")
         row = next(r for r in res.data["deals"] if r["id"] == d.id)
         self.assertIsNone(row["profit"])
+
+
+class DealStageConstructorTest(TestCase):
+    """Конструктор сценариев: менеджер создаёт/меняет/удаляет кастомные этапы;
+    участник сделки (клиент) видит план, но менять не может."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000006001", password="p", role="MANAGER")
+        self.customer = User.objects.create_user(phone="+77000006002", password="p", role="CUSTOMER_PERSON")
+        self.other = User.objects.create_user(phone="+77000006003", password="p", role="CUSTOMER_PERSON")
+        self.deal = Deal.objects.create(customer=self.customer, title="Сделка")
+
+    def _c(self, u):
+        c = APIClient()
+        c.force_authenticate(user=u)
+        return c
+
+    def test_manager_adds_stages_in_order(self):
+        r1 = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/stages/", {"title": "Проверка техники"}, format="json")
+        r2 = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/stages/", {"title": "Оплата поставщику"}, format="json")
+        self.assertEqual(r1.status_code, 201)
+        self.assertEqual(r2.status_code, 201)
+        self.assertEqual(r1.data["order"], 0)
+        self.assertEqual(r2.data["order"], 1)
+
+    def test_customer_sees_stages_readonly(self):
+        DealStage.objects.create(deal=self.deal, title="Этап 1", order=0)
+        res = self._c(self.customer).get(f"/api/deals/{self.deal.id}/stages/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 1)
+        # клиент не может создавать этапы (эндпоинт менеджерский → 403)
+        self.assertEqual(
+            self._c(self.customer).post(f"/api/manager/deals/{self.deal.id}/stages/", {"title": "x"}, format="json").status_code,
+            403,
+        )
+
+    def test_non_participant_cannot_read(self):
+        DealStage.objects.create(deal=self.deal, title="Этап", order=0)
+        self.assertEqual(self._c(self.other).get(f"/api/deals/{self.deal.id}/stages/").status_code, 403)
+
+    def test_manager_toggles_and_reorders(self):
+        s1 = DealStage.objects.create(deal=self.deal, title="A", order=0)
+        s2 = DealStage.objects.create(deal=self.deal, title="B", order=1)
+        # отметить готовым
+        r = self._c(self.manager).patch(f"/api/manager/stages/{s1.id}/", {"is_done": True}, format="json")
+        self.assertEqual(r.status_code, 200)
+        s1.refresh_from_db(); self.assertTrue(s1.is_done)
+        # поменять порядок (swap)
+        self._c(self.manager).patch(f"/api/manager/stages/{s1.id}/", {"order": 1}, format="json")
+        self._c(self.manager).patch(f"/api/manager/stages/{s2.id}/", {"order": 0}, format="json")
+        s1.refresh_from_db(); s2.refresh_from_db()
+        self.assertEqual(s1.order, 1); self.assertEqual(s2.order, 0)
+
+    def test_manager_deletes_stage(self):
+        s = DealStage.objects.create(deal=self.deal, title="X", order=0)
+        r = self._c(self.manager).delete(f"/api/manager/stages/{s.id}/")
+        self.assertEqual(r.status_code, 204)
+        self.assertEqual(DealStage.objects.count(), 0)
+
+    def test_customer_cannot_modify_stage(self):
+        s = DealStage.objects.create(deal=self.deal, title="X", order=0)
+        self.assertEqual(self._c(self.customer).patch(f"/api/manager/stages/{s.id}/", {"is_done": True}, format="json").status_code, 403)
+        self.assertEqual(self._c(self.customer).delete(f"/api/manager/stages/{s.id}/").status_code, 403)
 
 
 _TMP_MEDIA = tempfile.mkdtemp()

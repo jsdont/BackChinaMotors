@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage
 
 
 class ClientInline(admin.StackedInline):
@@ -127,13 +127,19 @@ class ExpenseInline(admin.TabularInline):
     extra = 1
 
 
+class DealStageInline(admin.TabularInline):
+    # Кастомный план сделки (конструктор сценариев).
+    model = DealStage
+    extra = 1
+
+
 @admin.register(Deal)
 class DealAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "customer", "vehicle", "status", "is_paid", "created_at")
     list_editable = ("status", "is_paid")
     list_filter = ("status", "is_paid")
     search_fields = ("title", "customer__phone")
-    inlines = [DealAssignmentInline, PaymentInline, DocumentInline, ExpenseInline]
+    inlines = [DealAssignmentInline, DealStageInline, PaymentInline, DocumentInline, ExpenseInline]
 
 
 @admin.register(DealAssignment)

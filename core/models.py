@@ -260,6 +260,24 @@ class Expense(models.Model):
         return f"{self.get_category_display()} — {self.amount}"
 
 
+class DealStage(models.Model):
+    # Кастомный этап сделки («конструктор сценариев»): менеджер составляет
+    # для конкретной сделки свой план из произвольных шагов сверх фиксированной
+    # воронки Deal.status. Клиент видит этот план (чек-лист) — прозрачность.
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="stages")
+    title = models.CharField(max_length=255)
+    order = models.PositiveIntegerField(default=0)
+    is_done = models.BooleanField(default=False)
+    note = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.title
+
+
 class Lead(models.Model):
     STATUS_CHOICES = (
         ('NEW', 'Новая'),

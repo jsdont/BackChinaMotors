@@ -18,6 +18,7 @@ from core.views import (
     DealCommentsView,
     DealPaymentsView,
     DealDocumentsView,
+    DealStagesView,
     ManagerDealsView,
     ManagerDealStatusView,
     ManagerStatsView,
@@ -26,6 +27,8 @@ from core.views import (
     ManagerFinanceView,
     ManagerDealExpensesView,
     ManagerExpenseDeleteView,
+    ManagerDealStagesCreateView,
+    ManagerDealStageDetailView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -59,6 +62,7 @@ urlpatterns = [
     path("api/deals/<int:deal_id>/comments/", DealCommentsView.as_view(), name="deal_comments"),
     path("api/deals/<int:deal_id>/payments/", DealPaymentsView.as_view(), name="deal_payments"),
     path("api/deals/<int:deal_id>/documents/", DealDocumentsView.as_view(), name="deal_documents"),
+    path("api/deals/<int:deal_id>/stages/", DealStagesView.as_view(), name="deal_stages"),
 
     # Кабинет менеджера
     path("api/manager/deals/", ManagerDealsView.as_view(), name="manager_deals"),
@@ -67,6 +71,8 @@ urlpatterns = [
     path("api/manager/deals/<int:deal_id>/documents/", ManagerDealDocumentsCreateView.as_view(), name="manager_deal_documents_create"),
     path("api/manager/deals/<int:deal_id>/expenses/", ManagerDealExpensesView.as_view(), name="manager_deal_expenses"),
     path("api/manager/expenses/<int:pk>/", ManagerExpenseDeleteView.as_view(), name="manager_expense_delete"),
+    path("api/manager/deals/<int:deal_id>/stages/", ManagerDealStagesCreateView.as_view(), name="manager_deal_stages"),
+    path("api/manager/stages/<int:pk>/", ManagerDealStageDetailView.as_view(), name="manager_stage_detail"),
     path("api/manager/stats/", ManagerStatsView.as_view(), name="manager_stats"),
     path("api/manager/finance/", ManagerFinanceView.as_view(), name="manager_finance"),
 

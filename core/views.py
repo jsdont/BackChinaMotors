@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenViewBase
 
-from .models import Deal, DealAssignment, Comment, Payment, Document, Expense
+from .models import Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage
 from .serializers import (
     PhoneTokenObtainPairSerializer,
     RegisterPersonSerializer,
@@ -27,6 +27,7 @@ from .serializers import (
     PaymentCreateSerializer,
     DocumentCreateSerializer,
     ExpenseSerializer,
+    DealStageSerializer,
 )
 from .serializers import _user_label
 from .permissions import IsManager
@@ -226,6 +227,17 @@ class DealDocumentsView(generics.ListAPIView):
         return Document.objects.filter(deal=deal).order_by("-created_at")
 
 
+class DealStagesView(generics.ListAPIView):
+    """Кастомный план сделки — участники сделки (в т.ч. клиент) видят его как
+    чек-лист. Составляет и меняет только менеджер (см. Manager*StageView)."""
+    serializer_class = DealStageSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        deal = _get_participant_deal(self.request.user, self.kwargs["deal_id"])
+        return deal.stages.all()
+
+
 # =========================================================
 # КАБИНЕТ МЕНЕДЖЕРА — оперативный обзор: все сделки, смена этапа, инбокс
 # заявок и сводка по счётчикам. Доступ только менеджеру/админу.
@@ -398,3 +410,27 @@ class ManagerExpenseDeleteView(generics.DestroyAPIView):
     permission_classes = [IsManager]
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
+
+
+class ManagerDealStagesCreateView(generics.ListCreateAPIView):
+    """Менеджер: список и добавление кастомных этапов сделки (конструктор
+    сценариев). Новый этап встаёт в конец плана."""
+    serializer_class = DealStageSerializer
+    permission_classes = [IsManager]
+
+    def get_queryset(self):
+        return DealStage.objects.filter(deal_id=self.kwargs["deal_id"])
+
+    def perform_create(self, serializer):
+        deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
+        last = deal.stages.order_by("-order").first()
+        next_order = (last.order + 1) if last else 0
+        serializer.save(deal=deal, order=next_order)
+
+
+class ManagerDealStageDetailView(generics.UpdateAPIView, generics.DestroyAPIView):
+    """Менеджер меняет этап (готовность/название/порядок) или удаляет его."""
+    serializer_class = DealStageSerializer
+    permission_classes = [IsManager]
+    queryset = DealStage.objects.all()
+    http_method_names = ["patch", "delete"]
