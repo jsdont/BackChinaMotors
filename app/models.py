@@ -51,6 +51,15 @@ class CalculatorLead(models.Model):
         decimal_places=2,
         default=0
     )
+    # Сделка, в которую менеджер сконвертировал эту заявку. Заполнено —
+    # значит заявка уже превращена в сделку (повторно конвертировать нельзя).
+    converted_deal = models.ForeignKey(
+        "core.Deal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_leads"
+    )
 
     def clean(self):
         if self.status == "won" and not self.product:

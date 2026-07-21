@@ -43,6 +43,7 @@ class ManagerLeadSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "product_title",
+            "converted_deal",
             "created_at",
             "closed_at",
         ]

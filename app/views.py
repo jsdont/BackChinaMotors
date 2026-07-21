@@ -1,3 +1,5 @@
+from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,6 +9,9 @@ from .serializers import LeadSerializer, ManagerLeadSerializer
 from rest_framework import status
 from .serializers import LeadStatusUpdateSerializer
 from core.permissions import IsManager
+from core.models import Deal, Manager, Client
+
+User = get_user_model()
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -27,6 +32,64 @@ def manager_leads(request):
         leads = leads.filter(status=status_filter)
     serializer = ManagerLeadSerializer(leads, many=True)
     return Response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsManager])
+def convert_lead_to_deal(request, pk):
+    """Менеджер превращает заявку в сделку: находит клиента по телефону
+    (или создаёт нового CUSTOMER_PERSON, если такого ещё нет), создаёт Deal
+    с товаром из заявки и связывает заявку со сделкой, чтобы её нельзя было
+    сконвертировать повторно."""
+    try:
+        lead = CalculatorLead.objects.get(pk=pk)
+    except CalculatorLead.DoesNotExist:
+        return Response({"error": "Заявка не найдена"}, status=404)
+
+    if lead.converted_deal_id:
+        return Response(
+            {"error": "Заявка уже сконвертирована в сделку", "deal_id": lead.converted_deal_id},
+            status=400,
+        )
+
+    phone = (lead.phone or "").strip()
+    if not phone:
+        return Response({"error": "У заявки нет телефона — сделку создать нельзя"}, status=400)
+
+    with transaction.atomic():
+        customer = User.objects.filter(phone=phone).first()
+        created_customer = False
+        if customer is None:
+            customer = User.objects.create_user(
+                phone=phone, password=None, role="CUSTOMER_PERSON", is_verified=False
+            )
+            Client.objects.create(user=customer, full_name=(lead.name or phone))
+            created_customer = True
+
+        manager = Manager.objects.filter(user=request.user).first()
+
+        title = str(lead.product) if lead.product else (lead.name or f"Заявка {lead.calc_id}")
+
+        deal = Deal.objects.create(
+            customer=customer,
+            vehicle=lead.product,
+            manager=manager,
+            title=title,
+        )
+
+        lead.converted_deal = deal
+        if lead.status == "new":
+            lead.status = "in_progress"
+        lead.save()
+
+    return Response({
+        "deal_id": deal.id,
+        "deal_title": deal.title,
+        "customer_phone": customer.phone,
+        "created_customer": created_customer,
+        "lead_id": lead.id,
+        "lead_status": lead.status,
+    }, status=201)
 
 
 from django.utils import timezone
