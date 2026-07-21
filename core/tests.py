@@ -7,6 +7,8 @@ from rest_framework.test import APIClient
 
 from .models import User, Deal, Payment, Document, Expense, DealStage
 
+_TMP_MEDIA = tempfile.mkdtemp()
+
 
 class DealPaymentsDocumentsAPITest(TestCase):
     """Клиент видит платежи и документы своей сделки; чужой пользователь — нет."""
@@ -307,7 +309,70 @@ class DealStageConstructorTest(TestCase):
         self.assertEqual(self._c(self.customer).delete(f"/api/manager/stages/{s.id}/").status_code, 403)
 
 
-_TMP_MEDIA = tempfile.mkdtemp()
+@override_settings(STORAGES={
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}, MEDIA_ROOT=_TMP_MEDIA)
+class DealMediaGalleryTest(TestCase):
+    """Галерея сделки: менеджер добавляет фото/видео, клиент видит, удаляет
+    только менеджер. Фото — файл, видео — ссылка; ровно одно из двух."""
+
+    def setUp(self):
+        from .models import DealMedia
+        self.DealMedia = DealMedia
+        self.manager = User.objects.create_user(phone="+77000007001", password="p", role="MANAGER")
+        self.customer = User.objects.create_user(phone="+77000007002", password="p", role="CUSTOMER_PERSON")
+        self.other = User.objects.create_user(phone="+77000007003", password="p", role="CUSTOMER_PERSON")
+        self.deal = Deal.objects.create(customer=self.customer, title="Сделка")
+
+    def _c(self, u):
+        c = APIClient(); c.force_authenticate(user=u); return c
+
+    def test_manager_uploads_photo(self):
+        f = SimpleUploadedFile("loading.jpg", b"\xff\xd8\xff imagedata", content_type="image/jpeg")
+        res = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/media/", {"image": f, "caption": "Погрузка"}, format="multipart")
+        self.assertEqual(res.status_code, 201, res.data)
+        m = self.DealMedia.objects.get(deal=self.deal)
+        self.assertTrue(m.image)
+        self.assertEqual(m.uploaded_by_id, self.manager.id)
+
+    def test_manager_adds_video_link(self):
+        res = self._c(self.manager).post(
+            f"/api/manager/deals/{self.deal.id}/media/",
+            {"video_url": "https://youtu.be/abc123", "caption": "Отгрузка"}, format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        m = self.DealMedia.objects.get(deal=self.deal)
+        self.assertEqual(m.video_url, "https://youtu.be/abc123")
+
+    def test_reject_empty_and_both(self):
+        empty = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/media/", {"caption": "x"}, format="json")
+        self.assertEqual(empty.status_code, 400)
+        f = SimpleUploadedFile("a.jpg", b"data", content_type="image/jpeg")
+        both = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/media/", {"image": f, "video_url": "https://y.tube/x"}, format="multipart")
+        self.assertEqual(both.status_code, 400)
+
+    def test_client_sees_gallery_with_type_and_url(self):
+        self.DealMedia.objects.create(deal=self.deal, video_url="https://youtu.be/z", caption="Видео")
+        res = self._c(self.customer).get(f"/api/deals/{self.deal.id}/media/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(res.data[0]["media_type"], "video")
+        self.assertEqual(res.data[0]["url"], "https://youtu.be/z")
+
+    def test_non_participant_denied(self):
+        self.DealMedia.objects.create(deal=self.deal, video_url="https://y.tube/z")
+        self.assertEqual(self._c(self.other).get(f"/api/deals/{self.deal.id}/media/").status_code, 403)
+
+    def test_customer_cannot_add_or_delete(self):
+        m = self.DealMedia.objects.create(deal=self.deal, video_url="https://y.tube/z")
+        self.assertEqual(self._c(self.customer).post(f"/api/manager/deals/{self.deal.id}/media/", {"video_url": "https://y.tube/x"}, format="json").status_code, 403)
+        self.assertEqual(self._c(self.customer).delete(f"/api/manager/media/{m.id}/").status_code, 403)
+
+    def test_manager_deletes_media(self):
+        m = self.DealMedia.objects.create(deal=self.deal, video_url="https://y.tube/z")
+        self.assertEqual(self._c(self.manager).delete(f"/api/manager/media/{m.id}/").status_code, 204)
+        self.assertEqual(self.DealMedia.objects.count(), 0)
 
 
 @override_settings(STORAGES={

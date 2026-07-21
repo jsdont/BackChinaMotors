@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenViewBase
 
-from .models import Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage
+from .models import Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia
 from .serializers import (
     PhoneTokenObtainPairSerializer,
     RegisterPersonSerializer,
@@ -28,10 +28,12 @@ from .serializers import (
     DocumentCreateSerializer,
     ExpenseSerializer,
     DealStageSerializer,
+    DealMediaSerializer,
+    DealMediaCreateSerializer,
 )
 from .serializers import _user_label
 from .permissions import IsManager
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 
 class PhoneTokenObtainPairView(TokenViewBase):
@@ -238,6 +240,17 @@ class DealStagesView(generics.ListAPIView):
         return deal.stages.all()
 
 
+class DealMediaView(generics.ListAPIView):
+    """Галерея сделки (фото/видео) — участники сделки, включая клиента.
+    Добавляет/удаляет только менеджер (см. ManagerDealMedia*View)."""
+    serializer_class = DealMediaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        deal = _get_participant_deal(self.request.user, self.kwargs["deal_id"])
+        return deal.media.all()
+
+
 # =========================================================
 # КАБИНЕТ МЕНЕДЖЕРА — оперативный обзор: все сделки, смена этапа, инбокс
 # заявок и сводка по счётчикам. Доступ только менеджеру/админу.
@@ -434,3 +447,27 @@ class ManagerDealStageDetailView(generics.UpdateAPIView, generics.DestroyAPIView
     permission_classes = [IsManager]
     queryset = DealStage.objects.all()
     http_method_names = ["patch", "delete"]
+
+
+class ManagerDealMediaCreateView(generics.ListCreateAPIView):
+    """Менеджер: список галереи и добавление фото (файл, multipart) или видео
+    (ссылка, JSON)."""
+    permission_classes = [IsManager]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_serializer_class(self):
+        return DealMediaCreateSerializer if self.request.method == "POST" else DealMediaSerializer
+
+    def get_queryset(self):
+        return DealMedia.objects.filter(deal_id=self.kwargs["deal_id"])
+
+    def perform_create(self, serializer):
+        deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
+        serializer.save(deal=deal, uploaded_by=self.request.user)
+
+
+class ManagerDealMediaDeleteView(generics.DestroyAPIView):
+    """Менеджер удаляет элемент галереи сделки."""
+    permission_classes = [IsManager]
+    queryset = DealMedia.objects.all()
+    serializer_class = DealMediaSerializer

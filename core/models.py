@@ -278,6 +278,25 @@ class DealStage(models.Model):
         return self.title
 
 
+class DealMedia(models.Model):
+    # Фото/видео по сделке — визуальное сопровождение (погрузка, склад,
+    # доставка). Клиент видит галерею. Фото загружаются файлом (Cloudinary),
+    # видео добавляются ссылкой (YouTube/TikTok и т.п.) — так надёжнее, чем
+    # хранить видео в файловом хранилище.
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="media")
+    image = models.FileField(upload_to='deal_media/', null=True, blank=True)
+    video_url = models.URLField(blank=True, default="")
+    caption = models.CharField(max_length=255, blank=True, default="")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.caption or (self.video_url or "media")
+
+
 class Lead(models.Model):
     STATUS_CHOICES = (
         ('NEW', 'Новая'),

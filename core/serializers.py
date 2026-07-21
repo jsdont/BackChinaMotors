@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia
 
 
 class RegisterPersonSerializer(serializers.Serializer):
@@ -313,6 +313,50 @@ class DealStageSerializer(serializers.ModelSerializer):
         model = DealStage
         fields = ["id", "deal", "title", "order", "is_done", "note", "created_at"]
         read_only_fields = ["id", "deal", "created_at"]
+
+
+def _media_url(obj):
+    if obj.image:
+        url = obj.image.url
+        if url.startswith("http://") or url.startswith("https://"):
+            return url
+        return url
+    return obj.video_url or None
+
+
+class DealMediaSerializer(serializers.ModelSerializer):
+    """Элемент галереи сделки — фото (файл) или видео (ссылка), только чтение."""
+    media_type = serializers.SerializerMethodField()
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DealMedia
+        fields = ["id", "deal", "media_type", "url", "video_url", "caption", "created_at"]
+        read_only_fields = fields
+
+    def get_media_type(self, obj):
+        return "video" if obj.video_url else "photo"
+
+    def get_url(self, obj):
+        return _media_url(obj)
+
+
+class DealMediaCreateSerializer(serializers.ModelSerializer):
+    """Менеджер добавляет фото (файл) ИЛИ видео (ссылку)."""
+
+    class Meta:
+        model = DealMedia
+        fields = ["id", "image", "video_url", "caption", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate(self, attrs):
+        image = attrs.get("image")
+        video_url = (attrs.get("video_url") or "").strip()
+        if not image and not video_url:
+            raise serializers.ValidationError("Нужно приложить фото или указать ссылку на видео.")
+        if image and video_url:
+            raise serializers.ValidationError("Укажите либо фото, либо ссылку на видео, но не оба.")
+        return attrs
 
 
 class PhoneTokenObtainPairSerializer(serializers.Serializer):
