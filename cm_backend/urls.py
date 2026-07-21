@@ -34,6 +34,8 @@ from core.views import (
     ManagerDealMediaCreateView,
     ManagerDealMediaDeleteView,
     ManagerDealActivityView,
+    NotificationsView,
+    MarkNotificationsReadView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -83,6 +85,9 @@ urlpatterns = [
     path("api/manager/deals/<int:deal_id>/media/", ManagerDealMediaCreateView.as_view(), name="manager_deal_media"),
     path("api/manager/media/<int:pk>/", ManagerDealMediaDeleteView.as_view(), name="manager_media_delete"),
     path("api/manager/deals/<int:deal_id>/activity/", ManagerDealActivityView.as_view(), name="manager_deal_activity"),
+
+    path("api/notifications/", NotificationsView.as_view(), name="notifications"),
+    path("api/notifications/mark-read/", MarkNotificationsReadView.as_view(), name="notifications_mark_read"),
     path("api/manager/stats/", ManagerStatsView.as_view(), name="manager_stats"),
     path("api/manager/finance/", ManagerFinanceView.as_view(), name="manager_finance"),
 

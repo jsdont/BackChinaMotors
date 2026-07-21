@@ -432,6 +432,55 @@ class DealActivityLogTest(TestCase):
         self.assertEqual(self._c(self.customer).get(f"/api/manager/deals/{self.deal.id}/activity/").status_code, 403)
 
 
+class NotificationsTest(TestCase):
+    """Уведомления: клиент видит события по своим сделкам (кроме своих же и
+    внутренних), счётчик непрочитанных сбрасывается по mark-read."""
+
+    def setUp(self):
+        from .models import DealActivity
+        self.DealActivity = DealActivity
+        self.manager = User.objects.create_user(phone="+77000009001", password="p", role="MANAGER")
+        self.customer = User.objects.create_user(phone="+77000009002", password="p", role="CUSTOMER_PERSON")
+        self.other = User.objects.create_user(phone="+77000009003", password="p", role="CUSTOMER_PERSON")
+        self.deal = Deal.objects.create(customer=self.customer, title="Сделка")
+        # события менеджера по сделке клиента
+        self.DealActivity.objects.create(deal=self.deal, actor=self.manager, text="Этап изменён", internal=False)
+        self.DealActivity.objects.create(deal=self.deal, actor=self.manager, text="Загружен документ", internal=False)
+        self.DealActivity.objects.create(deal=self.deal, actor=self.manager, text="Добавлен расход", internal=True)
+        # событие самого клиента (не должно попасть в его уведомления)
+        self.DealActivity.objects.create(deal=self.deal, actor=self.customer, text="Сделка создана клиентом", internal=False)
+
+    def _c(self, u):
+        c = APIClient(); c.force_authenticate(user=u); return c
+
+    def test_client_unread_excludes_internal_and_self(self):
+        res = self._c(self.customer).get("/api/notifications/")
+        self.assertEqual(res.status_code, 200)
+        # 2 события менеджера (не internal, не своё)
+        self.assertEqual(res.data["unread_count"], 2)
+        texts = [i["text"] for i in res.data["items"]]
+        self.assertIn("Этап изменён", texts)
+        self.assertNotIn("Добавлен расход", texts)         # internal
+        self.assertNotIn("Сделка создана клиентом", texts)  # своё
+
+    def test_mark_read_resets_counter(self):
+        self.assertEqual(self._c(self.customer).get("/api/notifications/").data["unread_count"], 2)
+        self.assertEqual(self._c(self.customer).post("/api/notifications/mark-read/").status_code, 200)
+        self.assertEqual(self._c(self.customer).get("/api/notifications/").data["unread_count"], 0)
+
+    def test_other_customer_sees_nothing(self):
+        res = self._c(self.other).get("/api/notifications/")
+        self.assertEqual(res.data["unread_count"], 0)
+        self.assertEqual(len(res.data["items"]), 0)
+
+    def test_manager_sees_all_incl_internal(self):
+        res = self._c(self.manager).get("/api/notifications/")
+        # менеджер видит все события, кроме своих же → только событие клиента
+        texts = [i["text"] for i in res.data["items"]]
+        self.assertIn("Сделка создана клиентом", texts)
+        self.assertNotIn("Этап изменён", texts)  # своё действие менеджера
+
+
 @override_settings(STORAGES={
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},

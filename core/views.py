@@ -540,3 +540,59 @@ class ManagerDealActivityView(generics.ListAPIView):
 
     def get_queryset(self):
         return DealActivity.objects.filter(deal_id=self.kwargs["deal_id"])
+
+
+# =========================================================
+# УВЕДОМЛЕНИЯ — колокольчик со счётчиком новых событий по сделкам
+# пользователя (строится поверх лога изменений DealActivity).
+# =========================================================
+
+
+def _user_notifications_qs(user):
+    """Активности по сделкам, относящимся к пользователю, с учётом роли.
+    Свои же действия не показываем (не уведомляем о том, что сделал сам)."""
+    if user.is_staff or getattr(user, "role", None) in ("MANAGER", "ADMIN"):
+        qs = DealActivity.objects.all()
+    elif getattr(user, "role", None) in CUSTOMER_ROLES:
+        qs = DealActivity.objects.filter(deal__customer=user, internal=False)
+    else:
+        deal_ids = DealAssignment.objects.filter(assigned_user=user).values_list("deal_id", flat=True)
+        qs = DealActivity.objects.filter(deal_id__in=list(deal_ids), internal=False)
+    return qs.exclude(actor=user).select_related("deal", "actor")
+
+
+class NotificationsView(APIView):
+    """Список последних событий по сделкам пользователя + счётчик непрочитанных."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        qs = _user_notifications_qs(user)
+        seen = user.notifications_seen_at
+
+        unread_count = qs.filter(created_at__gt=seen).count() if seen else qs.count()
+
+        items = []
+        for a in qs.order_by("-created_at")[:20]:
+            items.append({
+                "id": a.id,
+                "deal_id": a.deal_id,
+                "deal_title": a.deal.title or f"Сделка #{a.deal_id}",
+                "text": a.text,
+                "actor": _user_label(a.actor) if a.actor_id else None,
+                "created_at": a.created_at,
+                "unread": (seen is None) or (a.created_at > seen),
+            })
+        return Response({"unread_count": unread_count, "items": items})
+
+
+class MarkNotificationsReadView(APIView):
+    """Отметить все уведомления прочитанными (сдвигаем отметку «последний раз
+    смотрел» на текущий момент)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from django.utils import timezone
+        request.user.notifications_seen_at = timezone.now()
+        request.user.save(update_fields=["notifications_seen_at"])
+        return Response({"ok": True})

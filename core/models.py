@@ -54,6 +54,9 @@ class User(AbstractUser):
     # Регистрация сама по себе не даёт доступа — админ подтверждает
     # аккаунт в Django admin (как в v32fix_work).
     is_verified = models.BooleanField(default=False, verbose_name="Подтверждён")
+    # Момент, когда пользователь последний раз открывал уведомления. Всё, что
+    # произошло по его сделкам позже, считается непрочитанным.
+    notifications_seen_at = models.DateTimeField(null=True, blank=True)
 
     objects = UserManager()
 
