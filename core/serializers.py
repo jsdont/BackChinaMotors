@@ -275,6 +275,24 @@ class DealStatusUpdateSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
 
+class PaymentCreateSerializer(serializers.ModelSerializer):
+    """Менеджер добавляет платёж по сделке из веб-кабинета."""
+
+    class Meta:
+        model = Payment
+        fields = ["id", "amount", "is_confirmed", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
+class DocumentCreateSerializer(serializers.ModelSerializer):
+    """Менеджер загружает документ по сделке из веб-кабинета (файл → Cloudinary)."""
+
+    class Meta:
+        model = Document
+        fields = ["id", "type", "file", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
 class PhoneTokenObtainPairSerializer(serializers.Serializer):
     phone = serializers.CharField()
     password = serializers.CharField(write_only=True)

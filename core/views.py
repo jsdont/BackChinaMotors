@@ -22,8 +22,11 @@ from .serializers import (
     PaymentSerializer,
     DocumentSerializer,
     DealStatusUpdateSerializer,
+    PaymentCreateSerializer,
+    DocumentCreateSerializer,
 )
 from .permissions import IsManager
+from rest_framework.parsers import MultiPartParser, FormParser
 
 
 class PhoneTokenObtainPairView(TokenViewBase):
@@ -272,3 +275,25 @@ class ManagerStatsView(APIView):
             "leads_total": leads_qs.count(),
             "leads_open": open_leads,
         })
+
+
+class ManagerDealPaymentsCreateView(generics.CreateAPIView):
+    """Менеджер добавляет платёж по сделке."""
+    serializer_class = PaymentCreateSerializer
+    permission_classes = [IsManager]
+
+    def perform_create(self, serializer):
+        deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
+        confirmed = serializer.validated_data.get("is_confirmed", False)
+        serializer.save(deal=deal, confirmed_by=self.request.user if confirmed else None)
+
+
+class ManagerDealDocumentsCreateView(generics.CreateAPIView):
+    """Менеджер загружает документ по сделке (файл уходит в Cloudinary)."""
+    serializer_class = DocumentCreateSerializer
+    permission_classes = [IsManager]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def perform_create(self, serializer):
+        deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
+        serializer.save(deal=deal, uploaded_by=self.request.user)
