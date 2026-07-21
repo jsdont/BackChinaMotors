@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .models import User, Deal, Payment, Document
+from .models import User, Deal, Payment, Document, Expense
 
 
 class DealPaymentsDocumentsAPITest(TestCase):
@@ -175,6 +175,73 @@ class ManagerFinanceReportTest(TestCase):
         c = APIClient()
         c.force_authenticate(user=self.customer)
         self.assertEqual(c.get("/api/manager/finance/").status_code, 403)
+
+
+class ManagerExpensesTest(TestCase):
+    """Расходы по сделке: менеджер добавляет/удаляет, клиент не имеет доступа;
+    прибыль в отчёте = стоимость − расходы."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000005001", password="p", role="MANAGER")
+        self.customer = User.objects.create_user(phone="+77000005002", password="p", role="CUSTOMER_PERSON")
+        self.deal = Deal.objects.create(customer=self.customer, title="Сделка", total_price=Decimal("10000000.00"))
+
+    def _mgr(self):
+        c = APIClient()
+        c.force_authenticate(user=self.manager)
+        return c
+
+    def _cust(self):
+        c = APIClient()
+        c.force_authenticate(user=self.customer)
+        return c
+
+    def test_manager_adds_and_lists_expense(self):
+        res = self._mgr().post(
+            f"/api/manager/deals/{self.deal.id}/expenses/",
+            {"category": "PURCHASE", "amount": "4000000.00", "note": "Оплата поставщику"}, format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        e = Expense.objects.get(deal=self.deal)
+        self.assertEqual(e.amount, Decimal("4000000.00"))
+        self.assertEqual(e.created_by_id, self.manager.id)
+        lst = self._mgr().get(f"/api/manager/deals/{self.deal.id}/expenses/")
+        self.assertEqual(len(lst.data), 1)
+        self.assertEqual(lst.data[0]["category_display"], "Закупка в Китае")
+
+    def test_customer_cannot_access_expenses(self):
+        self.assertEqual(self._cust().get(f"/api/manager/deals/{self.deal.id}/expenses/").status_code, 403)
+        self.assertEqual(
+            self._cust().post(f"/api/manager/deals/{self.deal.id}/expenses/", {"category": "OTHER", "amount": "1"}, format="json").status_code,
+            403,
+        )
+        self.assertEqual(Expense.objects.count(), 0)
+
+    def test_manager_deletes_expense(self):
+        e = Expense.objects.create(deal=self.deal, category="LOGISTICS", amount=Decimal("500000.00"))
+        res = self._mgr().delete(f"/api/manager/expenses/{e.id}/")
+        self.assertEqual(res.status_code, 204)
+        self.assertEqual(Expense.objects.count(), 0)
+
+    def test_finance_profit_is_value_minus_expenses(self):
+        Payment.objects.create(deal=self.deal, amount=Decimal("6000000.00"), is_confirmed=True)
+        Expense.objects.create(deal=self.deal, category="PURCHASE", amount=Decimal("4000000.00"))
+        Expense.objects.create(deal=self.deal, category="CUSTOMS", amount=Decimal("1500000.00"))
+        res = self._mgr().get("/api/manager/finance/")
+        s = res.data["summary"]
+        self.assertEqual(Decimal(s["total_expenses"]), Decimal("5500000.00"))
+        # profit = 10,000,000 − 5,500,000 = 4,500,000
+        self.assertEqual(Decimal(s["total_profit"]), Decimal("4500000.00"))
+        row = next(r for r in res.data["deals"] if r["id"] == self.deal.id)
+        self.assertEqual(Decimal(row["expenses"]), Decimal("5500000.00"))
+        self.assertEqual(Decimal(row["profit"]), Decimal("4500000.00"))
+
+    def test_finance_profit_null_without_price(self):
+        d = Deal.objects.create(customer=self.customer, title="Без цены")
+        Expense.objects.create(deal=d, category="OTHER", amount=Decimal("100000.00"))
+        res = self._mgr().get("/api/manager/finance/")
+        row = next(r for r in res.data["deals"] if r["id"] == d.id)
+        self.assertIsNone(row["profit"])
 
 
 _TMP_MEDIA = tempfile.mkdtemp()

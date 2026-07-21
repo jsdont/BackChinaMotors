@@ -236,6 +236,30 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class Expense(models.Model):
+    # Расход по сделке — внутренние затраты (закупка, логистика, растаможка
+    # и т.д.). ВИДЯТ ТОЛЬКО МЕНЕДЖЕРЫ: клиенту эти суммы не показываются,
+    # они нужны для расчёта прибыли (P&L) = стоимость сделки − расходы.
+    CATEGORY_CHOICES = (
+        ('PURCHASE', 'Закупка в Китае'),
+        ('LOGISTICS', 'Логистика / доставка'),
+        ('CUSTOMS', 'Растаможка'),
+        ('CERTIFICATION', 'Сертификация (СБКТС/ЭПТС)'),
+        ('SVH', 'СВХ / хранение'),
+        ('OTHER', 'Прочее'),
+    )
+
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="expenses")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='OTHER')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    note = models.CharField(max_length=255, blank=True, default="")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.get_category_display()} — {self.amount}"
+
+
 class Lead(models.Model):
     STATUS_CHOICES = (
         ('NEW', 'Новая'),

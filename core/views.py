@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenViewBase
 
-from .models import Deal, DealAssignment, Comment, Payment, Document
+from .models import Deal, DealAssignment, Comment, Payment, Document, Expense
 from .serializers import (
     PhoneTokenObtainPairSerializer,
     RegisterPersonSerializer,
@@ -26,6 +26,7 @@ from .serializers import (
     DealStatusUpdateSerializer,
     PaymentCreateSerializer,
     DocumentCreateSerializer,
+    ExpenseSerializer,
 )
 from .serializers import _user_label
 from .permissions import IsManager
@@ -281,10 +282,10 @@ class ManagerStatsView(APIView):
 
 
 class ManagerFinanceView(APIView):
-    """Финансовый отчёт по сделкам: стоимость сделки против фактически
-    полученных денег (подтверждённые платежи). Прибыль/расходы НЕ считаем —
-    в системе нет данных о себестоимости, поэтому отчёт строится только на
-    реальных цифрах: стоимость сделки и поступившие/ожидаемые платежи."""
+    """Финансовый отчёт по сделкам (P&L): стоимость сделки, фактически
+    полученные деньги (подтверждённые платежи), внутренние расходы и прибыль
+    = стоимость − расходы. Все цифры реальные — из платежей и расходов,
+    занесённых менеджером."""
     permission_classes = [IsManager]
 
     def get(self, request):
@@ -296,6 +297,7 @@ class ManagerFinanceView(APIView):
             .annotate(
                 received=Sum("payment__amount", filter=Q(payment__is_confirmed=True)),
                 pending=Sum("payment__amount", filter=Q(payment__is_confirmed=False)),
+                expenses_sum=Sum("expenses__amount"),
             )
             .order_by("-created_at")
         )
@@ -305,18 +307,24 @@ class ManagerFinanceView(APIView):
         total_value = Decimal("0")
         total_received = Decimal("0")
         total_pending = Decimal("0")
+        total_expenses = Decimal("0")
+        total_profit = Decimal("0")
         deals_with_price = 0
 
         for d in deals:
             value = d.total_price or Decimal("0")
             received = d.received or Decimal("0")
             pending = d.pending or Decimal("0")
+            expenses = d.expenses_sum or Decimal("0")
             balance = value - received
+            profit = value - expenses
             if d.total_price is not None:
                 deals_with_price += 1
                 total_value += value
+                total_profit += profit
             total_received += received
             total_pending += pending
+            total_expenses += expenses
             rows.append({
                 "id": d.id,
                 "title": d.title or f"Сделка #{d.id}",
@@ -327,6 +335,11 @@ class ManagerFinanceView(APIView):
                 "received": received,
                 "pending": pending,
                 "balance": balance,
+                "expenses": expenses,
+                # Прибыль показываем только когда указана стоимость сделки —
+                # иначе "прибыль" была бы просто минус расходы, что вводит в
+                # заблуждение.
+                "profit": (profit if d.total_price is not None else None),
             })
 
         return Response({
@@ -337,6 +350,8 @@ class ManagerFinanceView(APIView):
                 "total_received": total_received,
                 "total_pending": total_pending,
                 "total_outstanding": total_value - total_received,
+                "total_expenses": total_expenses,
+                "total_profit": total_profit,
             },
             "deals": rows,
         })
@@ -362,3 +377,24 @@ class ManagerDealDocumentsCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
         serializer.save(deal=deal, uploaded_by=self.request.user)
+
+
+class ManagerDealExpensesView(generics.ListCreateAPIView):
+    """Расходы по сделке — список и добавление. ТОЛЬКО менеджер: клиенту эти
+    внутренние затраты не показываются (нужны для расчёта прибыли)."""
+    serializer_class = ExpenseSerializer
+    permission_classes = [IsManager]
+
+    def get_queryset(self):
+        return Expense.objects.filter(deal_id=self.kwargs["deal_id"]).order_by("created_at")
+
+    def perform_create(self, serializer):
+        deal = generics.get_object_or_404(Deal, pk=self.kwargs["deal_id"])
+        serializer.save(deal=deal, created_by=self.request.user)
+
+
+class ManagerExpenseDeleteView(generics.DestroyAPIView):
+    """Менеджер удаляет ошибочно добавленный расход."""
+    permission_classes = [IsManager]
+    queryset = Expense.objects.all()
+    serializer_class = ExpenseSerializer

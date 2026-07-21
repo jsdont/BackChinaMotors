@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense
 
 
 class RegisterPersonSerializer(serializers.Serializer):
@@ -293,6 +293,16 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
         model = Document
         fields = ["id", "type", "file", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    """Расход по сделке — только для менеджера (клиенту не показывается)."""
+    category_display = serializers.CharField(source="get_category_display", read_only=True)
+
+    class Meta:
+        model = Expense
+        fields = ["id", "deal", "category", "category_display", "amount", "note", "created_at"]
+        read_only_fields = ["id", "deal", "category_display", "created_at"]
 
 
 class PhoneTokenObtainPairSerializer(serializers.Serializer):

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense
 
 
 class ClientInline(admin.StackedInline):
@@ -121,13 +121,19 @@ class DocumentInline(admin.TabularInline):
     extra = 1
 
 
+class ExpenseInline(admin.TabularInline):
+    # Внутренние расходы по сделке (клиенту не видны) — для расчёта прибыли.
+    model = Expense
+    extra = 1
+
+
 @admin.register(Deal)
 class DealAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "customer", "vehicle", "status", "is_paid", "created_at")
     list_editable = ("status", "is_paid")
     list_filter = ("status", "is_paid")
     search_fields = ("title", "customer__phone")
-    inlines = [DealAssignmentInline, PaymentInline, DocumentInline]
+    inlines = [DealAssignmentInline, PaymentInline, DocumentInline, ExpenseInline]
 
 
 @admin.register(DealAssignment)
@@ -156,3 +162,10 @@ class DocumentAdmin(admin.ModelAdmin):
     list_display = ("deal", "type", "uploaded_by", "created_at")
     list_filter = ("type",)
     search_fields = ("deal__title",)
+
+
+@admin.register(Expense)
+class ExpenseAdmin(admin.ModelAdmin):
+    list_display = ("deal", "category", "amount", "created_by", "created_at")
+    list_filter = ("category",)
+    search_fields = ("deal__title", "note")
