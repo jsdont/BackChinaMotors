@@ -35,6 +35,8 @@ from .serializers import (
 from .serializers import _user_label
 from .permissions import IsManager
 from .activity import log_activity
+from .notify import notify_user
+from django.conf import settings as dj_settings
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 
@@ -301,6 +303,11 @@ class ManagerDealStatusView(generics.UpdateAPIView):
         if "status" in data and obj.status != old_status:
             log_activity(obj, self.request.user,
                          f"Этап сделки изменён: {labels.get(old_status, old_status)} → {obj.get_status_display()}")
+            notify_user(
+                obj.customer,
+                f"China Motors: обновление по сделке «{obj.title or ('#' + str(obj.id))}»",
+                f"Новый этап: {obj.get_status_display()}. Подробности — в личном кабинете.",
+            )
         if "is_paid" in data and obj.is_paid != old_paid:
             log_activity(obj, self.request.user,
                          "Отметка об оплате: " + ("оплачено" if obj.is_paid else "снята"))
@@ -422,6 +429,12 @@ class ManagerDealPaymentsCreateView(generics.CreateAPIView):
         obj = serializer.save(deal=deal, confirmed_by=self.request.user if confirmed else None)
         log_activity(deal, self.request.user,
                      f"Добавлен платёж {obj.amount} ₸ ({'подтверждён' if obj.is_confirmed else 'ожидает'})")
+        if obj.is_confirmed:
+            notify_user(
+                deal.customer,
+                f"China Motors: платёж по сделке «{deal.title or ('#' + str(deal.id))}»",
+                f"Подтверждён платёж на сумму {obj.amount} ₸. Спасибо!",
+            )
 
 
 class ManagerDealDocumentsCreateView(generics.CreateAPIView):
@@ -596,3 +609,13 @@ class MarkNotificationsReadView(APIView):
         request.user.notifications_seen_at = timezone.now()
         request.user.save(update_fields=["notifications_seen_at"])
         return Response({"ok": True})
+
+
+class PaymentInfoView(APIView):
+    """Инструкция «как оплатить» (реквизиты банка/Kaspi) — показывается клиенту
+    по сделке с остатком. Текст настраивается через переменную окружения
+    PAYMENT_INSTRUCTIONS; пустая строка = блок не показывается."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"instructions": getattr(dj_settings, "PAYMENT_INSTRUCTIONS", "") or ""})

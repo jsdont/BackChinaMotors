@@ -481,6 +481,58 @@ class NotificationsTest(TestCase):
         self.assertNotIn("Этап изменён", texts)  # своё действие менеджера
 
 
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class EmailSmsPaymentTest(TestCase):
+    """Уведомления по e-mail при смене этапа/подтверждении платежа + эндпоинт
+    инструкций по оплате."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000011001", password="p", role="MANAGER")
+        self.customer = User.objects.create_user(phone="+77000011002", password="p", role="CUSTOMER_PERSON", email="client@example.com")
+        self.deal = Deal.objects.create(customer=self.customer, title="Сделка", status="AGREEMENT")
+
+    def _mgr(self):
+        c = APIClient(); c.force_authenticate(user=self.manager); return c
+
+    def test_status_change_emails_customer(self):
+        from django.core import mail
+        mail.outbox = []
+        res = self._mgr().patch(f"/api/manager/deals/{self.deal.id}/status/", {"status": "CONTRACT"}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("client@example.com", mail.outbox[0].to)
+        self.assertIn("Договор", mail.outbox[0].body)
+
+    def test_confirmed_payment_emails_customer(self):
+        from django.core import mail
+        mail.outbox = []
+        self._mgr().post(f"/api/manager/deals/{self.deal.id}/payments/", {"amount": "100000", "is_confirmed": True}, format="json")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("client@example.com", mail.outbox[0].to)
+
+    def test_unconfirmed_payment_no_email(self):
+        from django.core import mail
+        mail.outbox = []
+        self._mgr().post(f"/api/manager/deals/{self.deal.id}/payments/", {"amount": "100000"}, format="json")
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_customer_without_email_no_crash(self):
+        from django.core import mail
+        no_email = User.objects.create_user(phone="+77000011003", password="p", role="CUSTOMER_PERSON")
+        deal = Deal.objects.create(customer=no_email, title="X", status="AGREEMENT")
+        mail.outbox = []
+        res = self._mgr().patch(f"/api/manager/deals/{deal.id}/status/", {"status": "CONTRACT"}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)  # нет адреса — письма нет, но и не падаем
+
+    @override_settings(PAYMENT_INSTRUCTIONS="Kaspi: +7 777 000 00 00, банк: KZ...")
+    def test_payment_info(self):
+        c = APIClient(); c.force_authenticate(user=self.customer)
+        res = c.get("/api/payment-info/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("Kaspi", res.data["instructions"])
+
+
 @override_settings(STORAGES={
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},

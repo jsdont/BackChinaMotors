@@ -13,6 +13,31 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "insecure-build-key")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# --- Уведомления: e-mail (SMTP) и SMS ---
+# Без EMAIL_HOST используем консольный бэкенд: письма печатаются в логи и
+# наружу ничего не уходит, пока не заданы реальные SMTP-секреты на Fly.
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+if EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+    EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() == "true"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "China Motors <no-reply@chinamotors.kz>")
+
+# SMS-шлюз (опционально). Универсальный HTTP-POST под шлюзы вроде SMSC.kz /
+# Mobizon. Без SMS_GATEWAY_URL SMS-отправка просто отключена.
+SMS_GATEWAY_URL = os.getenv("SMS_GATEWAY_URL", "")
+SMS_GATEWAY_LOGIN = os.getenv("SMS_GATEWAY_LOGIN", "")
+SMS_GATEWAY_PASSWORD = os.getenv("SMS_GATEWAY_PASSWORD", "")
+SMS_GATEWAY_SENDER = os.getenv("SMS_GATEWAY_SENDER", "ChinaMotors")
+
+# Текст «как оплатить» (реквизиты банка/Kaspi) — показывается клиенту по
+# сделке с остатком к оплате. Настраивается через переменную окружения.
+PAYMENT_INSTRUCTIONS = os.getenv("PAYMENT_INSTRUCTIONS", "")
+
 DJANGO_DEBUG=True
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"

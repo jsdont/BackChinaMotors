@@ -36,6 +36,7 @@ from core.views import (
     ManagerDealActivityView,
     NotificationsView,
     MarkNotificationsReadView,
+    PaymentInfoView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -88,6 +89,7 @@ urlpatterns = [
 
     path("api/notifications/", NotificationsView.as_view(), name="notifications"),
     path("api/notifications/mark-read/", MarkNotificationsReadView.as_view(), name="notifications_mark_read"),
+    path("api/payment-info/", PaymentInfoView.as_view(), name="payment_info"),
     path("api/manager/stats/", ManagerStatsView.as_view(), name="manager_stats"),
     path("api/manager/finance/", ManagerFinanceView.as_view(), name="manager_finance"),
 
