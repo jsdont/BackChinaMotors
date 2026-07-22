@@ -30,10 +30,14 @@ class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 CUSTOMER_ROLES = ("CUSTOMER_PERSON", "CUSTOMER_COMPANY")
+# Кто может размещать объявления: клиенты (продают своё) и партнёры-продавцы
+# (профессиональные продавцы техники из Китая). Все объявления проходят
+# модерацию (is_approved) перед показом в каталоге.
+SELLER_ROLES = CUSTOMER_ROLES + ("PARTNER",)
 
 
 class MyVehicleListingsView(generics.ListCreateAPIView):
-    """Клиент (физ./юр. лицо): список своих объявлений + подать новое."""
+    """Клиент/партнёр: список своих объявлений (товаров) + подать новое."""
     serializer_class = MyVehicleListingSerializer
     permission_classes = [IsAuthenticated]
 
@@ -41,8 +45,8 @@ class MyVehicleListingsView(generics.ListCreateAPIView):
         return Vehicle.objects.filter(owner=self.request.user).order_by("-created_at")
 
     def perform_create(self, serializer):
-        if self.request.user.role not in CUSTOMER_ROLES:
-            raise PermissionDenied("Разместить объявление может только клиент (физ. или юр. лицо).")
+        if self.request.user.role not in SELLER_ROLES:
+            raise PermissionDenied("Разместить объявление может клиент или партнёр-продавец.")
         serializer.save()
 
 
