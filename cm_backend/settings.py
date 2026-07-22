@@ -122,7 +122,18 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# Django 5.1+ читает ТОЛЬКО STORAGES; DEFAULT_FILE_STORAGE / STATICFILES_STORAGE
+# в новых версиях игнорируются, из-за чего загрузки падали на эфемерный диск Fly
+# и пропадали после рестарта. default -> Cloudinary (постоянное хранилище),
+# staticfiles -> WhiteNoise. Требуется секрет CLOUDINARY_URL.
+STORAGES = {
+    "default": {
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "ChinaMotors API",
@@ -159,10 +170,8 @@ CSRF_TRUSTED_ORIGINS = [
     "https://jsdont.github.io",
 ]
 
-# Cloudinary
+# Cloudinary (хранилище задано выше через STORAGES["default"])
 CLOUDINARY_URL = os.getenv("CLOUDINARY_URL")
-
-DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
 
 MEDIA_URL = '/media/'  # Django всё равно ждёт URL, но физически файлы в Cloudinary
 
