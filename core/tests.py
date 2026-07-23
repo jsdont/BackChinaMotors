@@ -663,3 +663,23 @@ class KPAutoSendTest(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             Deal.objects.create(customer=self.customer, vehicle=self.vehicle)
         self.assertEqual(len(mail.outbox), 0)
+
+
+class KPTemplateAdminTest(TestCase):
+    """Продавец/реквизиты КП правятся через модель KPSettings (админка)."""
+
+    def test_seller_reads_from_db_template(self):
+        from core.models import KPSettings
+        from core.kp import _seller_from, _template, _timeline
+        t = KPSettings.load()
+        t.seller_name = "МОЙ ПРОДАВЕЦ ТОО"
+        t.timeline = "Шаг один — 1 день.\nШаг два — 2 дня."
+        t.save()
+        self.assertEqual(_seller_from(_template())["name"], "МОЙ ПРОДАВЕЦ ТОО")
+        self.assertEqual(_timeline(_template()), ["Шаг один — 1 день.", "Шаг два — 2 дня."])
+
+    def test_singleton(self):
+        from core.models import KPSettings
+        KPSettings.load()
+        KPSettings(seller_name="второй").save()
+        self.assertEqual(KPSettings.objects.count(), 1)

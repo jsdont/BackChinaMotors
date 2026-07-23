@@ -329,3 +329,39 @@ class Lead(models.Model):
     source = models.CharField(max_length=50)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='NEW')
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class KPSettings(models.Model):
+    """Шаблон коммерческого предложения (продавец, реквизиты банка, условия и
+    сроки поставки, сервис-центр, печать). Singleton — одна запись, правится в
+    админке без деплоя. Значения по умолчанию — из core/kp_defaults.py."""
+
+    from . import kp_defaults as _d
+
+    seller_name = models.CharField("Продавец", max_length=255, default=_d.SELLER_NAME)
+    seller_address = models.TextField("Адрес продавца", default=_d.SELLER_ADDRESS)
+    bank = models.CharField("Банк", max_length=255, default=_d.BANK)
+    bank_address = models.TextField("Адрес банка", default=_d.BANK_ADDRESS)
+    account = models.CharField("Счёт (IBAN/ACCOUNT)", max_length=120, default=_d.ACCOUNT)
+    swift = models.CharField("SWIFT", max_length=60, default=_d.SWIFT)
+    delivery_terms = models.CharField("Условия поставки", max_length=255, default=_d.DELIVERY_TERMS)
+    timeline = models.TextField("Сроки поставки", default=_d.TIMELINE,
+                                help_text="По одному пункту на строку")
+    service_center = models.TextField("Сервис-центр", default=_d.SERVICE_CENTER)
+    show_seal = models.BooleanField("Показывать печать и подпись", default=True)
+
+    class Meta:
+        verbose_name = "Коммерческое предложение (шаблон)"
+        verbose_name_plural = "Коммерческое предложение (шаблон)"
+
+    def __str__(self):
+        return "Шаблон КП"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # singleton — всегда одна запись
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj

@@ -24,52 +24,52 @@ KP_ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets", "kp")
 LETTERHEAD = os.path.join(KP_ASSET_DIR, "letterhead.jpg")  # шапка SHACMAN
 SEAL = os.path.join(KP_ASSET_DIR, "seal.jpg")              # печать + подпись
 
-# --- Фиксированная часть КП (значения по умолчанию — из КП Shaanxi). ----------
-DEFAULT_SELLER = {
-    "name": "SHAANXI HEAVY DUTY AUTOMOBILE IMPORT AND EXPORT CO., LTD",
-    "address": (
-        "CHINA, XIAN CITY, PROVINCE SHAANQI, JINGWEI INDUSTRIAL DISTRICT, "
-        "SHAANQI AVE, ADMINISTRATIVE CENTER BLDG, 1 APT"
-    ),
-    "bank": "CHINA ZHESHANG BANK XI'AN BRANCH",
-    "bank_address": (
-        "TAIHUA JINMAO INTERNATIONAL. NO. 16. FENGHUI SOUTH ROAD, "
-        "YANTA DISTRICT, XIAN CITY, SHAANXI PROVINCE"
-    ),
-    "account": "7910000011420100067269 (USD)",
-    "swift": "ZJCBCN2NXXX",
-}
-
-DEFAULT_DELIVERY_TERMS = "DAP, СВХ НУР ЖОЛЫ, КАЗАХСТАН."
-
-DEFAULT_TIMELINE = [
-    "Экспортная декларация и регистрация документов в таможенном органе Китая — 1 день.",
-    "Постановка на электронную очередь для выезда из КПП Хоргос (Китай) — 1 день.",
-    "Доставка до СВХ Нур Жолы, Казахстан — 1 день.",
-    "Доставка до лаборатории (установка кнопки СОС, СБКТС и ЭПТС) и СВХ Алматы — 1 день.",
-    "Регистрация и утверждение СБКТС — 2 дня.",
-    "Проверка на соответствие экологическим стандартам ЕАЭС ЕВРО-5 — 3 дня.",
-    "Подача пакета документов в ЦЭД, оплата НДС и пошлины — 2 дня.",
-    "Подача документов в АО «Жасыл Даму» и оплата утильсбора — 1 день.",
-    "Утверждённый ЭПТС — 1 день.",
-    "Авто ЦОН — 1 день.",
-]
-
-DEFAULT_SERVICE_CENTER = (
-    "Шахман Центр в Алматы (сервис-центр): ТОО «NOMADCORE», БИН 250440006291. "
-    "Адрес: Казахстан, Алматинская область, Карасайский район, с.о. Әйтей, "
-    "село Айтей, КХ АКХ Ленинский, строение 1995, индекс 040900."
-)
+from . import kp_defaults
 
 
 def _cfg(name, default):
     return getattr(settings, name, default)
 
 
-def _seller():
-    s = dict(DEFAULT_SELLER)
-    s.update(_cfg("KP_SELLER", {}) or {})
-    return s
+def _template():
+    """Шаблон КП из БД (KPSettings, правится в админке). None — если таблицы
+    ещё нет или БД недоступна: тогда работаем на дефолтах из kp_defaults."""
+    try:
+        from .models import KPSettings
+        return KPSettings.load()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _seller_from(tpl):
+    if tpl is not None:
+        return {
+            "name": tpl.seller_name, "address": tpl.seller_address,
+            "bank": tpl.bank, "bank_address": tpl.bank_address,
+            "account": tpl.account, "swift": tpl.swift,
+        }
+    return {
+        "name": kp_defaults.SELLER_NAME, "address": kp_defaults.SELLER_ADDRESS,
+        "bank": kp_defaults.BANK, "bank_address": kp_defaults.BANK_ADDRESS,
+        "account": kp_defaults.ACCOUNT, "swift": kp_defaults.SWIFT,
+    }
+
+
+def _delivery_terms(tpl):
+    return tpl.delivery_terms if tpl else kp_defaults.DELIVERY_TERMS
+
+
+def _timeline(tpl):
+    raw = tpl.timeline if tpl else kp_defaults.TIMELINE
+    return [ln.strip() for ln in (raw or "").splitlines() if ln.strip()]
+
+
+def _service_center(tpl):
+    return tpl.service_center if tpl else kp_defaults.SERVICE_CENTER
+
+
+def _show_seal(tpl):
+    return tpl.show_seal if tpl is not None else True
 
 
 def _fmt_amount(value):
@@ -175,7 +175,8 @@ def build_kp_pdf(deal):
     # fontTools при встраивании шрифта сыпет INFO-логами про subsetting — глушим.
     logging.getLogger("fontTools").setLevel(logging.WARNING)
 
-    seller = _seller()
+    tpl = _template()
+    seller = _seller_from(tpl)
     vehicle = deal.vehicle
     customer = deal.customer
 
@@ -272,18 +273,18 @@ def build_kp_pdf(deal):
 
     # --- Условия и сроки поставки ----------------------------------------
     h("Условия поставки", 12)
-    para(f"Условия поставки: {_cfg('KP_DELIVERY_TERMS', DEFAULT_DELIVERY_TERMS)}", bold=True)
+    para(f"Условия поставки: {_delivery_terms(tpl)}", bold=True)
     pdf.ln(1)
-    for step in _cfg("KP_TIMELINE", DEFAULT_TIMELINE):
+    for step in _timeline(tpl):
         para(f"•  {step}")
     pdf.ln(3)
 
     # --- Сервис-центр -----------------------------------------------------
     h("Сервис и гарантия", 12)
-    para(_cfg("KP_SERVICE_CENTER", DEFAULT_SERVICE_CENTER))
+    para(_service_center(tpl))
 
     # --- Печать и подпись продавца ---------------------------------------
-    if _cfg("KP_SHOW_SEAL", True) and os.path.exists(SEAL):
+    if _show_seal(tpl) and os.path.exists(SEAL):
         try:
             pdf.ln(4)
             pdf.image(SEAL, x=pdf.l_margin, w=60)

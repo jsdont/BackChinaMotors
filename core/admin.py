@@ -1,5 +1,30 @@
 from django.contrib import admin
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, KPSettings
+
+
+@admin.register(KPSettings)
+class KPSettingsAdmin(admin.ModelAdmin):
+    """Шаблон КП — одна запись (singleton), правится без деплоя."""
+
+    fieldsets = (
+        ("Продавец и банк", {
+            "fields": ("seller_name", "seller_address", "bank", "bank_address",
+                       "account", "swift"),
+        }),
+        ("Условия, сроки, сервис", {
+            "fields": ("delivery_terms", "timeline", "service_center"),
+        }),
+        ("Оформление", {
+            "fields": ("show_seal",),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        # Singleton: не даём создавать вторую запись.
+        return not KPSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class ClientInline(admin.StackedInline):
