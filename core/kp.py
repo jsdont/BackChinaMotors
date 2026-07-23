@@ -133,15 +133,35 @@ def _customer_name(customer):
     return ""
 
 
-def _fetch_image(url):
-    """Скачать изображение по URL и вернуть BytesIO, либо None при любой ошибке."""
+def _fetch_image(url, max_width=1000):
+    """Скачать фото по URL, ужать до max_width и вернуть JPEG в BytesIO.
+
+    Ужимаем, чтобы КП-вложение не весило мегабайты (фото из каталога бывают
+    2–3 МБ). При любой ошибке возвращаем None — фото в КП необязательно.
+    """
     if not url:
         return None
     try:
         import io
         import requests
         resp = requests.get(url, timeout=8)
-        if resp.status_code == 200 and resp.content:
+        if resp.status_code != 200 or not resp.content:
+            return None
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(resp.content))
+            img.load()
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            if img.width > max_width:
+                h = round(img.height * max_width / img.width)
+                img = img.resize((max_width, h), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80, optimize=True)
+            buf.seek(0)
+            return buf
+        except Exception:
+            # Pillow недоступен/формат экзотичный — отдаём как есть.
             return io.BytesIO(resp.content)
     except Exception as e:  # noqa: BLE001 — фото в КП необязательно
         log.info("KP: vehicle image fetch failed (%s): %s", url, e)
