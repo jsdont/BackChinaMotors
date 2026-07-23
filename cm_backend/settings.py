@@ -38,6 +38,17 @@ SMS_GATEWAY_SENDER = os.getenv("SMS_GATEWAY_SENDER", "ChinaMotors")
 # сделке с остатком к оплате. Настраивается через переменную окружения.
 PAYMENT_INSTRUCTIONS = os.getenv("PAYMENT_INSTRUCTIONS", "")
 
+# --- Коммерческое предложение (КП) ---
+# При создании сделки система собирает КП (PDF) и отправляет его на почту.
+# KP_AUTOSEND=false полностью отключает автоотправку.
+KP_AUTOSEND = os.getenv("KP_AUTOSEND", "true").lower() == "true"
+# Почта компании — получает копию каждого КП (помимо клиента сделки).
+COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "")
+# Фиксированную часть КП (продавец/реквизиты банка, условия и сроки поставки,
+# сервис-центр) по умолчанию берём из core/kp.py. При необходимости можно
+# переопределить здесь: KP_SELLER (dict), KP_DELIVERY_TERMS (str),
+# KP_TIMELINE (list[str]), KP_SERVICE_CENTER (str).
+
 DJANGO_DEBUG=True
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"

@@ -601,3 +601,65 @@ class ManagerAddPaymentsDocumentsTest(TestCase):
         res = c.post(f"/api/manager/deals/{self.deal.id}/documents/", {"type": "GTD", "file": f}, format="multipart")
         self.assertEqual(res.status_code, 403)
         self.assertEqual(Document.objects.count(), 0)
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    KP_AUTOSEND=True,
+    COMPANY_EMAIL="office@chinamotors.kz",
+    DEFAULT_FROM_EMAIL="China Motors <no-reply@chinamotors.kz>",
+)
+class KPAutoSendTest(TestCase):
+    """При создании сделки КП собирается в PDF и уходит на почту."""
+
+    def setUp(self):
+        from cars.models import Vehicle
+        self.customer = User.objects.create_user(
+            phone="+77000009001", password="pass12345", role="CUSTOMER_PERSON",
+            email="client@example.com",
+        )
+        self.vehicle = Vehicle.objects.create(
+            brand="SHACMAN", model="SX4258Y3344", year=2026,
+            body_type="Тягач SHACMAN X6000", category="Тягач",
+            wheel_formula="6x4", weight_t=Decimal("44.00"),
+            engine_power_hp=550,
+            price_usd=Decimal("63350.00"), price_cny=Decimal("428000.00"),
+        )
+
+    def test_build_kp_pdf_returns_pdf_bytes(self):
+        from core.kp import build_kp_pdf
+        deal = Deal.objects.create(customer=self.customer, vehicle=self.vehicle)
+        pdf = build_kp_pdf(deal)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertGreater(len(pdf), 1000)
+
+    def test_deal_creation_sends_kp_with_attachment(self):
+        from django.core import mail
+        with self.captureOnCommitCallbacks(execute=True):
+            Deal.objects.create(customer=self.customer, vehicle=self.vehicle)
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertIn("client@example.com", msg.to)
+        self.assertIn("office@chinamotors.kz", msg.to)
+        self.assertEqual(len(msg.attachments), 1)
+        fname, content, mimetype = msg.attachments[0]
+        self.assertTrue(fname.endswith(".pdf"))
+        self.assertEqual(mimetype, "application/pdf")
+        self.assertTrue(bytes(content).startswith(b"%PDF"))
+
+    def test_no_recipients_no_email(self):
+        from django.core import mail
+        noemail = User.objects.create_user(
+            phone="+77000009002", password="pass12345", role="CUSTOMER_PERSON",
+        )
+        with override_settings(COMPANY_EMAIL=""):
+            with self.captureOnCommitCallbacks(execute=True):
+                Deal.objects.create(customer=noemail, vehicle=self.vehicle)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(KP_AUTOSEND=False)
+    def test_autosend_disabled(self):
+        from django.core import mail
+        with self.captureOnCommitCallbacks(execute=True):
+            Deal.objects.create(customer=self.customer, vehicle=self.vehicle)
+        self.assertEqual(len(mail.outbox), 0)
