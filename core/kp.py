@@ -289,8 +289,15 @@ def build_kp_pdf(deal):
     para(title, bold=True)
 
     # Фото техники из карточки (если есть) — как в оригинальном КП.
-    if vehicle and getattr(vehicle, "image_url", ""):
-        photo = _fetch_image(vehicle.image_url)
+    photo_url = ""
+    if vehicle:
+        photo_url = getattr(vehicle, "image_url", "") or ""
+        if not photo_url:
+            imgs = getattr(vehicle, "images", None)
+            if isinstance(imgs, list) and imgs:
+                photo_url = imgs[0]
+    if photo_url:
+        photo = _fetch_image(photo_url)
         if photo is not None:
             try:
                 pdf.image(photo, x=pdf.l_margin, w=90)

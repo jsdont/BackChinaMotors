@@ -713,3 +713,19 @@ class KPCalcRowsTest(TestCase):
         deal.sync_calc_rows({"groups": [{"title": "G2", "rows": [["c", 5]]}]})
         self.assertEqual(deal.calc_rows.count(), 1)
         self.assertEqual(deal.calc_rows.first().group, "G2")
+
+
+class UserAdminPasswordTest(TestCase):
+    """Пользователь, созданный через админку, логинится (пароль хэшируется)."""
+
+    def test_admin_created_user_authenticates(self):
+        from core.admin import UserCreationAdminForm
+        from django.contrib.auth import authenticate
+        form = UserCreationAdminForm(data={
+            "phone": "+77012223344", "email": "", "role": "CUSTOMER_PERSON",
+            "password1": "pw1234567", "password2": "pw1234567",
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        user = form.save()
+        self.assertNotEqual(user.password, "pw1234567")  # хранится хэш, не открытый
+        self.assertIsNotNone(authenticate(username="+77012223344", password="pw1234567"))

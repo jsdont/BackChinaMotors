@@ -1,4 +1,7 @@
+from django import forms
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.forms import Textarea
 from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings
 
@@ -71,20 +74,77 @@ ROLE_INLINES = {
 }
 
 
+class UserCreationAdminForm(forms.ModelForm):
+    """Создание пользователя в админке с корректным хэшированием пароля."""
+    password1 = forms.CharField(label="Пароль", widget=forms.PasswordInput)
+    password2 = forms.CharField(label="Пароль (повтор)", widget=forms.PasswordInput)
+
+    class Meta:
+        model = User
+        fields = ("phone", "email", "role", "is_verified", "is_staff", "is_superuser")
+
+    def clean_password2(self):
+        p1 = self.cleaned_data.get("password1")
+        p2 = self.cleaned_data.get("password2")
+        if p1 and p2 and p1 != p2:
+            raise forms.ValidationError("Пароли не совпадают")
+        return p2
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.set_password(self.cleaned_data["password1"])  # ХЭШИРУЕМ пароль
+        if commit:
+            user.save()
+        return user
+
+
+class UserChangeAdminForm(forms.ModelForm):
+    """Редактирование пользователя: пароль показывается как хэш (только чтение),
+    меняется через отдельную форму смены пароля."""
+    password = ReadOnlyPasswordHashField(
+        label="Пароль",
+        help_text="Пароль хранится в зашифрованном виде. Сменить — по ссылке "
+                  "«this form» под полем.",
+    )
+
+    class Meta:
+        model = User
+        fields = "__all__"
+
+
 @admin.register(User)
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(DjangoUserAdmin):
+    add_form = UserCreationAdminForm
+    form = UserChangeAdminForm
+    model = User
+
     list_display = ("phone", "role", "is_verified", "is_staff", "date_joined")
     list_editable = ("is_verified",)
     list_filter = ("role", "is_verified", "is_staff")
     search_fields = ("phone", "email")
     ordering = ("-date_joined",)
 
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": ("phone", "email", "role", "password1", "password2",
+                       "is_verified", "is_staff", "is_superuser"),
+        }),
+    )
+    fieldsets = (
+        (None, {"fields": ("phone", "email", "password")}),
+        ("Роль и статус", {"fields": ("role", "is_verified", "is_active",
+                                      "is_staff", "is_superuser")}),
+        ("Права", {"classes": ("collapse",), "fields": ("groups", "user_permissions")}),
+        ("Даты", {"classes": ("collapse",), "fields": ("last_login", "date_joined")}),
+    )
+
     actions = ["verify_users"]
 
+    @admin.action(description="Подтвердить выбранные аккаунты")
     def verify_users(self, request, queryset):
         updated = queryset.update(is_verified=True)
         self.message_user(request, f"Подтверждено аккаунтов: {updated}")
-    verify_users.short_description = "Подтвердить выбранные аккаунты"
 
     def get_inline_instances(self, request, obj=None):
         if not obj:
