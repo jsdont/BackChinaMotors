@@ -168,6 +168,42 @@ def _fetch_image(url, max_width=1000):
     return None
 
 
+def _render_breakdown(deal, h, para, pdf):
+    """Вывести блок «Расчёт стоимости под ключ» из deal.calc_breakdown.
+
+    Ожидаемая структура (как её отдаёт калькулятор):
+        {"groups": [{"title": str, "rows": [[label, amount], ...]}, ...],
+         "total": number}
+    Ничего не выводит, если расчёта нет или структура неожиданная.
+    """
+    bd = getattr(deal, "calc_breakdown", None)
+    if not isinstance(bd, dict):
+        return
+    groups = bd.get("groups")
+    if not isinstance(groups, list) or not groups:
+        return
+
+    h("Расчёт стоимости под ключ", 12)
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        gtitle = group.get("title")
+        if gtitle:
+            para(str(gtitle), bold=True)
+        for row in group.get("rows", []) or []:
+            try:
+                label, amount = row[0], row[1]
+            except (TypeError, IndexError, KeyError):
+                continue
+            para(f"•  {label}: {_fmt_amount(amount)} ₸")
+        pdf.ln(1)
+
+    total = bd.get("total")
+    if total is not None:
+        para(f"ИТОГО под ключ: {_fmt_amount(total)} ₸", bold=True)
+    pdf.ln(3)
+
+
 def build_kp_pdf(deal):
     """Собрать КП по сделке и вернуть содержимое PDF (bytes)."""
     from fpdf import FPDF  # ленивый импорт — тянем зависимость только при генерации
@@ -270,6 +306,9 @@ def build_kp_pdf(deal):
         for label, value in specs:
             para(f"•  {label}: {value}")
         pdf.ln(3)
+
+    # --- Расчёт стоимости под ключ (из калькулятора) ---------------------
+    _render_breakdown(deal, h, para, pdf)
 
     # --- Условия и сроки поставки ----------------------------------------
     h("Условия поставки", 12)

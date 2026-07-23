@@ -76,6 +76,7 @@ def convert_lead_to_deal(request, pk):
             vehicle=lead.product,
             manager=manager,
             title=title,
+            calc_breakdown=lead.calc_breakdown,
         )
 
         lead.converted_deal = deal

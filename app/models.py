@@ -60,6 +60,9 @@ class CalculatorLead(models.Model):
         blank=True,
         related_name="source_leads"
     )
+    # Детализация расчёта из калькулятора (см. Deal.calc_breakdown) — приходит
+    # с заявкой и переносится в сделку при конвертации.
+    calc_breakdown = models.JSONField(null=True, blank=True)
 
     def clean(self):
         if self.status == "won" and not self.product:

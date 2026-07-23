@@ -153,6 +153,12 @@ def contacts_form(request):
         except (Vehicle.DoesNotExist, ValueError, TypeError):
             product = None
 
+    # Детализация расчёта из калькулятора (необязательно). Принимаем только
+    # dict разумного размера, чтобы не хранить мусор из формы.
+    calc_breakdown = payload.get("calc_breakdown")
+    if not isinstance(calc_breakdown, dict) or len(json.dumps(calc_breakdown)) > 20000:
+        calc_breakdown = None
+
     try:
         calc_id = extract_calc_id(message)
         manager = get_next_manager()
@@ -170,6 +176,7 @@ def contacts_form(request):
             page_url=page_url,
             product=product,
             manager=manager,
+            calc_breakdown=calc_breakdown,
         )
 
         text = (
