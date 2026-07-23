@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.forms import Textarea
 from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, KPSettings
 
 
@@ -171,6 +172,36 @@ class DealAdmin(admin.ModelAdmin):
     list_filter = ("status", "is_paid")
     search_fields = ("title", "customer__phone")
     inlines = [DealAssignmentInline, DealStageInline, PaymentInline, DocumentInline, ExpenseInline, DealMediaInline]
+    fieldsets = (
+        (None, {
+            "fields": ("customer", "vehicle", "manager", "title", "status",
+                       "total_price", "is_paid"),
+        }),
+        ("Расчёт для КП (необязательно)", {
+            "classes": ("collapse",),
+            "fields": ("calc_breakdown",),
+            "description": (
+                "Детализация стоимости — выводится в КП блоком «Расчёт стоимости "
+                "под ключ». Обычно заполняется автоматически из калькулятора при "
+                "конвертации заявки; здесь можно задать/поправить вручную."
+            ),
+        }),
+    )
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        field = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == "calc_breakdown" and field is not None:
+            field.required = False
+            field.help_text = (
+                'Формат JSON. Пример: '
+                '{"groups": [{"title": "Дополнительные расходы", '
+                '"rows": [["Кнопка SOS", 100000], ["СБКТС", 150000]]}], '
+                '"total": 250000}'
+            )
+            field.widget = Textarea(attrs={
+                "rows": 12, "cols": 80, "style": "font-family:monospace",
+            })
+        return field
 
 
 @admin.register(DealAssignment)
