@@ -78,6 +78,10 @@ def convert_lead_to_deal(request, pk):
             title=title,
             calc_breakdown=lead.calc_breakdown,
         )
+        # Материализуем расчёт в построчные строки, чтобы менеджер правил их
+        # в админке, а не JSON.
+        if lead.calc_breakdown:
+            deal.sync_calc_rows(lead.calc_breakdown)
 
         lead.converted_deal = deal
         if lead.status == "new":

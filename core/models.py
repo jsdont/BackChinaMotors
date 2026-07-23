@@ -175,6 +175,53 @@ class Deal(models.Model):
     def __str__(self):
         return self.title or f"Сделка #{self.pk}"
 
+    def sync_calc_rows(self, data):
+        """Пересоздать строки расчёта (DealCalcRow) из dict-детализации вида
+        {"groups": [{"title": str, "rows": [[label, amount], ...]}, ...]}.
+        Используется при конвертации заявки, чтобы менеджер правил строки,
+        а не JSON."""
+        from decimal import Decimal, InvalidOperation
+        if not isinstance(data, dict):
+            return
+        groups = data.get("groups")
+        if not isinstance(groups, list):
+            return
+        self.calc_rows.all().delete()
+        bulk, order = [], 0
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            title = str(g.get("title", ""))
+            for row in g.get("rows") or []:
+                try:
+                    label, amount = row[0], row[1]
+                    amt = Decimal(str(amount))
+                except (TypeError, IndexError, KeyError, InvalidOperation, ValueError):
+                    continue
+                bulk.append(DealCalcRow(deal=self, group=title, label=str(label),
+                                        amount=amt, order=order))
+                order += 1
+        DealCalcRow.objects.bulk_create(bulk)
+
+
+class DealCalcRow(models.Model):
+    """Одна строка расчёта стоимости по сделке (для блока «Расчёт стоимости
+    под ключ» в КП). Правится построчно в админке — без JSON."""
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="calc_rows")
+    group = models.CharField("Группа", max_length=120, blank=True, default="",
+                             help_text="Напр.: Дополнительные расходы, Доставка и граница")
+    label = models.CharField("Строка", max_length=200)
+    amount = models.DecimalField("Сумма, ₸", max_digits=14, decimal_places=2, default=0)
+    order = models.PositiveIntegerField("Порядок", default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "Строка расчёта"
+        verbose_name_plural = "Строки расчёта"
+
+    def __str__(self):
+        return f"{self.group}: {self.label}"
+
 
 class DealAssignment(models.Model):
     # Кто из сервисных аккаунтов ведёт эту сделку на каждом этапе —

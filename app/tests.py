@@ -129,3 +129,21 @@ class LeadBreakdownFlowTest(TestCase):
         deal = Deal.objects.create(customer=customer, calc_breakdown=self.breakdown)
         pdf = build_kp_pdf(deal)
         self.assertTrue(pdf.startswith(b"%PDF"))
+
+
+class LeadBreakdownRowsTest(TestCase):
+    """Конвертация заявки материализует расчёт в построчные DealCalcRow."""
+
+    def test_convert_materializes_rows(self):
+        manager = User.objects.create_user(phone="+77000004001", password="p", role="MANAGER")
+        lead = CalculatorLead.objects.create(
+            calc_id="CM-BD-3", source="calculator", name="К", phone="+77000004044",
+            message="Расчёт", status="new",
+            calc_breakdown={"groups": [{"title": "Доставка", "rows": [["Водитель", 65000]]}], "total": 65000},
+        )
+        c = APIClient(); c.force_authenticate(user=manager)
+        res = c.post(f"/api/manager/leads/{lead.id}/convert/")
+        self.assertIn(res.status_code, (200, 201))
+        deal = Deal.objects.get(pk=res.data["deal_id"])
+        self.assertEqual(deal.calc_rows.count(), 1)
+        self.assertEqual(deal.calc_rows.first().label, "Водитель")

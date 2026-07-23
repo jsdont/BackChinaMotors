@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.forms import Textarea
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, KPSettings
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings
 
 
 @admin.register(KPSettings)
@@ -165,25 +165,42 @@ class DealMediaInline(admin.TabularInline):
     extra = 1
 
 
+class DealCalcRowInline(admin.TabularInline):
+    # Построчный редактор расчёта для КП — группа / строка / сумма / порядок.
+    model = DealCalcRow
+    extra = 0
+    fields = ("group", "label", "amount", "order")
+
+
 @admin.register(Deal)
 class DealAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "customer", "vehicle", "status", "is_paid", "created_at")
     list_editable = ("status", "is_paid")
     list_filter = ("status", "is_paid")
     search_fields = ("title", "customer__phone")
-    inlines = [DealAssignmentInline, DealStageInline, PaymentInline, DocumentInline, ExpenseInline, DealMediaInline]
+    inlines = [DealCalcRowInline, DealAssignmentInline, DealStageInline, PaymentInline, DocumentInline, ExpenseInline, DealMediaInline]
+    actions = ["resend_kp"]
+
+    @admin.action(description="Переслать КП на почту")
+    def resend_kp(self, request, queryset):
+        from .kp import send_kp_for_deal
+        sent = 0
+        for deal in queryset:
+            if send_kp_for_deal(deal):
+                sent += 1
+        self.message_user(request, f"КП отправлено по {sent} сделке(ам).")
     fieldsets = (
         (None, {
             "fields": ("customer", "vehicle", "manager", "title", "status",
                        "total_price", "is_paid"),
         }),
-        ("Расчёт для КП (необязательно)", {
+        ("Расчёт для КП — JSON (необязательно)", {
             "classes": ("collapse",),
             "fields": ("calc_breakdown",),
             "description": (
-                "Детализация стоимости — выводится в КП блоком «Расчёт стоимости "
-                "под ключ». Обычно заполняется автоматически из калькулятора при "
-                "конвертации заявки; здесь можно задать/поправить вручную."
+                "Сырой JSON из калькулятора. Для ручного редактирования удобнее "
+                "таблица «Строки расчёта» выше — если в ней есть строки, в КП "
+                "используются именно они, а этот JSON игнорируется."
             ),
         }),
     )

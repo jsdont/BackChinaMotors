@@ -168,15 +168,38 @@ def _fetch_image(url, max_width=1000):
     return None
 
 
-def _render_breakdown(deal, h, para, pdf):
-    """Вывести блок «Расчёт стоимости под ключ» из deal.calc_breakdown.
+def _breakdown_from_rows(deal):
+    """Собрать детализацию из построчных DealCalcRow (если заданы в админке).
+    Возвращает dict как calc_breakdown, либо None если строк нет."""
+    try:
+        rows = list(deal.calc_rows.all())
+    except Exception:  # noqa: BLE001 — связь может быть недоступна
+        return None
+    if not rows:
+        return None
+    from collections import OrderedDict
+    groups = OrderedDict()
+    total = 0
+    for r in rows:
+        try:
+            total += float(r.amount or 0)
+        except (TypeError, ValueError):
+            pass
+        groups.setdefault(r.group or "", []).append([r.label, r.amount])
+    return {"groups": [{"title": g, "rows": rs} for g, rs in groups.items()],
+            "total": total}
 
-    Ожидаемая структура (как её отдаёт калькулятор):
+
+def _render_breakdown(deal, h, para, pdf):
+    """Вывести блок «Расчёт стоимости под ключ».
+
+    Приоритет — построчные строки из админки (DealCalcRow); если их нет —
+    JSON deal.calc_breakdown (например, из калькулятора).
+    Ожидаемая структура:
         {"groups": [{"title": str, "rows": [[label, amount], ...]}, ...],
          "total": number}
-    Ничего не выводит, если расчёта нет или структура неожиданная.
     """
-    bd = getattr(deal, "calc_breakdown", None)
+    bd = _breakdown_from_rows(deal) or getattr(deal, "calc_breakdown", None)
     if not isinstance(bd, dict):
         return
     groups = bd.get("groups")

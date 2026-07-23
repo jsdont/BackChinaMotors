@@ -683,3 +683,33 @@ class KPTemplateAdminTest(TestCase):
         KPSettings.load()
         KPSettings(seller_name="второй").save()
         self.assertEqual(KPSettings.objects.count(), 1)
+
+
+class KPCalcRowsTest(TestCase):
+    """Построчный расчёт (DealCalcRow) имеет приоритет над JSON в КП."""
+
+    def _customer(self, phone):
+        return User.objects.create_user(phone=phone, password="pass12345",
+                                        role="CUSTOMER_PERSON")
+
+    def test_breakdown_from_rows_priority(self):
+        from core.models import DealCalcRow
+        from core.kp import _breakdown_from_rows
+        deal = Deal.objects.create(
+            customer=self._customer("+77000005555"),
+            calc_breakdown={"groups": [{"title": "JSON", "rows": [["json", 1]]}], "total": 1},
+        )
+        DealCalcRow.objects.create(deal=deal, group="Доп. расходы", label="SOS", amount=100000, order=0)
+        DealCalcRow.objects.create(deal=deal, group="Доп. расходы", label="СБКТС", amount=150000, order=1)
+        bd = _breakdown_from_rows(deal)
+        self.assertEqual(bd["groups"][0]["title"], "Доп. расходы")
+        self.assertEqual(len(bd["groups"][0]["rows"]), 2)
+        self.assertEqual(bd["total"], 250000.0)
+
+    def test_sync_calc_rows_recreates(self):
+        deal = Deal.objects.create(customer=self._customer("+77000005556"))
+        deal.sync_calc_rows({"groups": [{"title": "G", "rows": [["a", 10], ["b", 20]]}], "total": 30})
+        self.assertEqual(deal.calc_rows.count(), 2)
+        deal.sync_calc_rows({"groups": [{"title": "G2", "rows": [["c", 5]]}]})
+        self.assertEqual(deal.calc_rows.count(), 1)
+        self.assertEqual(deal.calc_rows.first().group, "G2")
