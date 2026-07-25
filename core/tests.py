@@ -748,3 +748,86 @@ class CalcConfigTest(TestCase):
         self.assertIn("mrp_by_year", data)
         self.assertIn("car", data)
         self.assertIn("duty_rules", data)
+
+
+class ManagerDealDeleteTest(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000020001", password="pass12345", role="MANAGER", is_staff=True)
+        self.customer = User.objects.create_user(phone="+77000020002", password="pass12345", role="CUSTOMER_PERSON")
+        self.deal = Deal.objects.create(customer=self.customer, title="Del")
+
+    def _c(self, u):
+        c = APIClient(); c.force_authenticate(user=u); return c
+
+    def test_manager_deletes_deal(self):
+        res = self._c(self.manager).delete(f"/api/manager/deals/{self.deal.id}/")
+        self.assertEqual(res.status_code, 204)
+        self.assertFalse(Deal.objects.filter(id=self.deal.id).exists())
+
+    def test_non_manager_cannot_delete(self):
+        res = self._c(self.customer).delete(f"/api/manager/deals/{self.deal.id}/")
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(Deal.objects.filter(id=self.deal.id).exists())
+
+
+class ManagerAssignmentTest(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000021001", password="pass12345", role="MANAGER", is_staff=True)
+        self.customer = User.objects.create_user(phone="+77000021002", password="pass12345", role="CUSTOMER_PERSON")
+        self.broker = User.objects.create_user(phone="+77000021003", password="pass12345", role="SERVICE_BROKER")
+        self.deal = Deal.objects.create(customer=self.customer, title="Assign")
+
+    def _c(self, u):
+        c = APIClient(); c.force_authenticate(user=u); return c
+
+    def test_service_users_list_filtered(self):
+        res = self._c(self.manager).get("/api/manager/service-users/?role=BROKER")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(any(x["id"] == self.broker.id for x in res.data))
+
+    def test_manager_assigns_and_reassigns(self):
+        res = self._c(self.manager).post(
+            f"/api/manager/deals/{self.deal.id}/assignments/",
+            {"role": "BROKER", "assigned_user": self.broker.id, "note": "срочно"}, format="json")
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(self.deal.assignments.count(), 1)
+        # повторный POST по тому же этапу — обновляет, не плодит
+        res2 = self._c(self.manager).post(
+            f"/api/manager/deals/{self.deal.id}/assignments/",
+            {"role": "BROKER", "assigned_user": self.broker.id}, format="json")
+        self.assertEqual(res2.status_code, 200)
+        self.assertEqual(self.deal.assignments.count(), 1)
+
+    def test_delete_assignment(self):
+        from core.models import DealAssignment
+        a = DealAssignment.objects.create(deal=self.deal, role="SVH", assigned_user=self.broker)
+        res = self._c(self.manager).delete(f"/api/manager/assignments/{a.id}/")
+        self.assertEqual(res.status_code, 204)
+
+
+class MeProfilePasswordTest(TestCase):
+    def setUp(self):
+        from core.models import Client
+        self.user = User.objects.create_user(phone="+77000022001", password="oldpass123", role="CUSTOMER_PERSON")
+        Client.objects.create(user=self.user, full_name="Старое Имя")
+
+    def _c(self, u):
+        c = APIClient(); c.force_authenticate(user=u); return c
+
+    def test_get_and_patch_profile(self):
+        res = self._c(self.user).get("/api/me/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["name"], "Старое Имя")
+        res2 = self._c(self.user).patch("/api/me/", {"email": "new@e.com", "name": "Новое Имя"}, format="json")
+        self.assertEqual(res2.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "new@e.com")
+        self.assertEqual(self.user.client_profile.full_name, "Новое Имя")
+
+    def test_change_password(self):
+        res = self._c(self.user).post("/api/me/password/", {"old_password": "wrong", "new_password": "brandnew1"}, format="json")
+        self.assertEqual(res.status_code, 400)
+        res2 = self._c(self.user).post("/api/me/password/", {"old_password": "oldpass123", "new_password": "brandnew1"}, format="json")
+        self.assertEqual(res2.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("brandnew1"))

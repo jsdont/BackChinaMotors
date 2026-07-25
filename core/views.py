@@ -9,7 +9,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenViewBase
 
-from .models import Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity
+from django.shortcuts import get_object_or_404
+from .models import User, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity
 from .serializers import (
     PhoneTokenObtainPairSerializer,
     RegisterPersonSerializer,
@@ -629,3 +630,168 @@ class CalcConfigView(APIView):
     def get(self, request):
         from .models import CalcConfig
         return Response(CalcConfig.load().to_config())
+
+
+# ============================================================================
+#  Кабинет менеджера: удаление сделки, назначение сервисов
+# ============================================================================
+
+# Роль назначения (DealAssignment) -> роль пользователя, который её выполняет.
+ASSIGN_ROLE_TO_USER_ROLE = {
+    "BROKER": "SERVICE_BROKER",
+    "SVH": "SERVICE_SVH",
+    "LAB": "SERVICE_LAB",
+    "LOGISTIC": "SERVICE_LOGISTIC",
+    "DECLARANT": "SERVICE_DECLARANT",
+    "BANK": "BANK",
+}
+SERVICE_USER_ROLES = list(ASSIGN_ROLE_TO_USER_ROLE.values())
+
+
+class ManagerDealDeleteView(generics.DestroyAPIView):
+    """Менеджер удаляет сделку целиком."""
+    permission_classes = [IsManager]
+    queryset = Deal.objects.all()
+
+
+class ManagerServiceUsersView(APIView):
+    """Список сервис-аккаунтов, которых можно назначить на этап. ?role=BROKER
+    сузит выборку до подходящих под конкретный этап."""
+    permission_classes = [IsManager]
+
+    def get(self, request):
+        role = request.query_params.get("role")
+        qs = User.objects.filter(role__in=SERVICE_USER_ROLES)
+        if role and role in ASSIGN_ROLE_TO_USER_ROLE:
+            qs = qs.filter(role=ASSIGN_ROLE_TO_USER_ROLE[role])
+        return Response([
+            {"id": u.id, "label": _user_label(u), "role": u.role}
+            for u in qs.order_by("role", "phone")
+        ])
+
+
+class ManagerDealAssignmentsView(APIView):
+    """Назначения по сделке: GET — список, POST — создать/обновить (по этапу)."""
+    permission_classes = [IsManager]
+
+    def get(self, request, deal_id):
+        deal = get_object_or_404(Deal, pk=deal_id)
+        return Response(DealAssignmentSerializer(deal.assignments.all(), many=True).data)
+
+    def post(self, request, deal_id):
+        deal = get_object_or_404(Deal, pk=deal_id)
+        role = request.data.get("role")
+        if role not in dict(DealAssignment.ROLE_CHOICES):
+            return Response({"error": "Некорректный этап"}, status=400)
+
+        user_obj = None
+        assigned_user_id = request.data.get("assigned_user")
+        if assigned_user_id:
+            user_obj = User.objects.filter(pk=assigned_user_id).first()
+            if not user_obj:
+                return Response({"error": "Пользователь не найден"}, status=400)
+
+        assignment, created = DealAssignment.objects.update_or_create(
+            deal=deal, role=role,
+            defaults={"assigned_user": user_obj, "note": request.data.get("note", "") or ""},
+        )
+        log_activity(
+            deal, request.user,
+            f"Назначение на этап «{assignment.get_role_display()}»: {_user_label(user_obj)}",
+        )
+        if user_obj:
+            notify_user(
+                user_obj,
+                "China Motors: назначение по сделке",
+                f"Вам назначена работа по сделке «{deal.title or ('#' + str(deal.id))}» "
+                f"— этап «{assignment.get_role_display()}».",
+            )
+        return Response(DealAssignmentSerializer(assignment).data,
+                        status=201 if created else 200)
+
+
+class ManagerAssignmentDeleteView(generics.DestroyAPIView):
+    """Снять назначение с этапа."""
+    permission_classes = [IsManager]
+    queryset = DealAssignment.objects.all()
+
+    def perform_destroy(self, instance):
+        deal, role_label = instance.deal, instance.get_role_display()
+        super().perform_destroy(instance)
+        log_activity(deal, self.request.user, f"Снято назначение с этапа «{role_label}»")
+
+
+# ============================================================================
+#  Личный кабинет: профиль и смена пароля
+# ============================================================================
+
+_NAME_FIELDS = [
+    ("client_profile", "full_name"),
+    ("company_profile", "company_name"),
+    ("service_profile", "company_name"),
+    ("bank_profile", "bank_name"),
+    ("partner_profile", "company_name"),
+]
+
+
+class MeView(APIView):
+    """Профиль текущего пользователя: GET — данные, PATCH — изменить."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(self._data(request.user))
+
+    def patch(self, request):
+        user = request.user
+        if "email" in request.data:
+            user.email = (request.data.get("email") or "").strip() or None
+        phone = (request.data.get("phone") or "").strip()
+        if phone and phone != user.phone:
+            if User.objects.filter(phone=phone).exclude(pk=user.pk).exists():
+                return Response({"error": "Этот телефон уже занят"}, status=400)
+            user.phone = phone
+        user.save()
+        if "name" in request.data:
+            self._set_name(user, (request.data.get("name") or "").strip())
+        return Response(self._data(user))
+
+    def _data(self, user):
+        return {
+            "phone": user.phone,
+            "email": user.email or "",
+            "role": user.role,
+            "is_verified": user.is_verified,
+            "name": self._get_name(user),
+        }
+
+    def _get_name(self, user):
+        for attr, field in _NAME_FIELDS:
+            prof = getattr(user, attr, None)
+            if prof:
+                return getattr(prof, field, "") or ""
+        return ""
+
+    def _set_name(self, user, name):
+        for attr, field in _NAME_FIELDS:
+            prof = getattr(user, attr, None)
+            if prof:
+                setattr(prof, field, name)
+                prof.save()
+                return
+
+
+class ChangePasswordView(APIView):
+    """Смена собственного пароля: {old_password, new_password}."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        old = request.data.get("old_password") or ""
+        new = request.data.get("new_password") or ""
+        if not user.check_password(old):
+            return Response({"error": "Текущий пароль неверный"}, status=400)
+        if len(new) < 6:
+            return Response({"error": "Новый пароль слишком короткий (минимум 6 символов)"}, status=400)
+        user.set_password(new)
+        user.save()
+        return Response({"status": "ok"})

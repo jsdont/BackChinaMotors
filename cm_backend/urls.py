@@ -38,6 +38,12 @@ from core.views import (
     MarkNotificationsReadView,
     PaymentInfoView,
     CalcConfigView,
+    ManagerDealDeleteView,
+    ManagerServiceUsersView,
+    ManagerDealAssignmentsView,
+    ManagerAssignmentDeleteView,
+    MeView,
+    ChangePasswordView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -87,6 +93,13 @@ urlpatterns = [
     path("api/manager/deals/<int:deal_id>/media/", ManagerDealMediaCreateView.as_view(), name="manager_deal_media"),
     path("api/manager/media/<int:pk>/", ManagerDealMediaDeleteView.as_view(), name="manager_media_delete"),
     path("api/manager/deals/<int:deal_id>/activity/", ManagerDealActivityView.as_view(), name="manager_deal_activity"),
+    path("api/manager/deals/<int:pk>/", ManagerDealDeleteView.as_view(), name="manager_deal_delete"),
+    path("api/manager/deals/<int:deal_id>/assignments/", ManagerDealAssignmentsView.as_view(), name="manager_deal_assignments"),
+    path("api/manager/assignments/<int:pk>/", ManagerAssignmentDeleteView.as_view(), name="manager_assignment_delete"),
+    path("api/manager/service-users/", ManagerServiceUsersView.as_view(), name="manager_service_users"),
+
+    path("api/me/", MeView.as_view(), name="me"),
+    path("api/me/password/", ChangePasswordView.as_view(), name="me_password"),
 
     path("api/notifications/", NotificationsView.as_view(), name="notifications"),
     path("api/notifications/mark-read/", MarkNotificationsReadView.as_view(), name="notifications_mark_read"),
