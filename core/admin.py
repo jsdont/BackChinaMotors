@@ -3,7 +3,34 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.forms import Textarea
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings, CalcConfig
+
+
+@admin.register(CalcConfig)
+class CalcConfigAdmin(admin.ModelAdmin):
+    """Настройки калькулятора — одна запись (singleton), правится без деплоя."""
+
+    fieldsets = (
+        ("Курсы (запасные; на сайте перекрываются живым курсом НБ РК)", {
+            "fields": ("usd_kzt", "cny_kzt"),
+        }),
+        ("Налоги", {"fields": ("vat", "duty")}),
+        ("Сборы (грузовые / спецтехника), ₸", {
+            "fields": ("plate", "srtc", "eptc", "sbkts", "sos", "customs_fee",
+                       "broker_service", "red_corridor", "adblue", "driver",
+                       "insurance", "toll_road", "svh"),
+        }),
+        ("Расширенные (МРП, легковые, пошлины) — JSON", {
+            "classes": ("collapse",),
+            "fields": ("advanced",),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return not CalcConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(KPSettings)
@@ -252,7 +279,7 @@ class DealAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {
             "fields": ("customer", "vehicle", "manager", "title", "status",
-                       "total_price", "is_paid"),
+                       "total_price", "is_paid", "kp_email"),
         }),
         ("Расчёт для КП — JSON (необязательно)", {
             "classes": ("collapse",),

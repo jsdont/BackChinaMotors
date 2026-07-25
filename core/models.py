@@ -169,6 +169,8 @@ class Deal(models.Model):
     # Детализация расчёта из калькулятора (группы строк + итог) — переносится
     # из заявки при конвертации и выводится отдельным блоком в КП.
     calc_breakdown = models.JSONField(null=True, blank=True)
+    # Куда слать КП, если у клиента не указан e-mail (или нужен другой адрес).
+    kp_email = models.EmailField("E-mail для КП", blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -415,3 +417,88 @@ class KPSettings(models.Model):
     def load(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+
+def _calc_advanced_default():
+    # МРП, легковые (M1), правила пошлин, дизель — значения из kz_calc_config.json.
+    return {
+        "diesel": {"price_kzt_per_l": 335, "liters": 200},
+        "mrp_by_year": {"2024": 3692, "2025": 3932, "2026": 4325},
+        "duty_rules": {"SPECIAL": 0, "CRANE": 0.08, "TRAL": 0.09, "DEFAULT": 0.10},
+        "car": {
+            "duty_petrol": 0.15, "duty_electric_hybrid": 0,
+            "util_coef": {"electric": 0, "cc1000": 1.5, "cc2000": 3.5, "cc3000": 5.0, "ccMax": 11.5},
+            "sbkts": 60000, "sos": 130000, "epts": 40000, "customs_fee": 25950,
+            "broker_svh": 75000, "svh": 25000, "declarant_usd": 200, "declarant_extra": 75000,
+            "export_decl_usd": 200, "export_decl_extra": 75000, "transport_almaty": 70000,
+            "first_reg_coef": 0.25, "plate_reg_coef": 4.05,
+        },
+        "current_year": 2026,
+    }
+
+
+class CalcConfig(models.Model):
+    """Настройки калькулятора (сборы, налоги, курсы) — правятся в админке без
+    деплоя. Singleton. Отдаётся калькулятору эндпоинтом /api/calc-config/.
+    Значения по умолчанию — из kz_calc_config.json (расчёты заказчика)."""
+
+    usd_kzt = models.DecimalField("Курс USD→₸ (запасной)", max_digits=10, decimal_places=2, default=493.11)
+    cny_kzt = models.DecimalField("Курс CNY→₸ (запасной)", max_digits=10, decimal_places=2, default=68.5)
+    vat = models.DecimalField("НДС (доля, напр. 0.16)", max_digits=5, decimal_places=4, default=0.16)
+    duty = models.DecimalField("Пошлина по умолчанию (доля)", max_digits=5, decimal_places=4, default=0.10)
+
+    plate = models.DecimalField("Госномер и техпаспорт, ₸", max_digits=12, decimal_places=2, default=16963)
+    srtc = models.DecimalField("СРТС, ₸", max_digits=12, decimal_places=2, default=17516)
+    eptc = models.DecimalField("ЭПТС, ₸", max_digits=12, decimal_places=2, default=50000)
+    sbkts = models.DecimalField("СБКТС, ₸", max_digits=12, decimal_places=2, default=150000)
+    sos = models.DecimalField("Кнопка SOS, ₸", max_digits=12, decimal_places=2, default=100000)
+    customs_fee = models.DecimalField("Таможенный сбор, ₸", max_digits=12, decimal_places=2, default=25950)
+    broker_service = models.DecimalField("Услуги брокера на СВХ, ₸", max_digits=12, decimal_places=2, default=115000)
+    red_corridor = models.DecimalField("Красный коридор, ₸", max_digits=12, decimal_places=2, default=200000)
+    adblue = models.DecimalField("AdBlue, ₸", max_digits=12, decimal_places=2, default=13500)
+    driver = models.DecimalField("Водитель, ₸", max_digits=12, decimal_places=2, default=65000)
+    insurance = models.DecimalField("Страховка, ₸", max_digits=12, decimal_places=2, default=16000)
+    toll_road = models.DecimalField("Платная дорога, ₸", max_digits=12, decimal_places=2, default=9000)
+    svh = models.DecimalField("Услуги СВХ, ₸", max_digits=12, decimal_places=2, default=91000)
+
+    advanced = models.JSONField(
+        "Расширенные (МРП, легковые M1, правила пошлин, дизель)",
+        default=_calc_advanced_default, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Калькулятор — настройки"
+        verbose_name_plural = "Калькулятор — настройки"
+
+    def __str__(self):
+        return "Настройки калькулятора"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # singleton
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def to_config(self):
+        """Собрать конфиг в формате, который ждёт калькулятор (kz_calc_config.json)."""
+        adv = self.advanced if isinstance(self.advanced, dict) else {}
+        f = lambda x: float(x)  # noqa: E731
+        return {
+            "currency": {"usd_kzt": f(self.usd_kzt), "cny_kzt": f(self.cny_kzt)},
+            "diesel": adv.get("diesel", {"price_kzt_per_l": 335, "liters": 200}),
+            "mrp_by_year": adv.get("mrp_by_year", {}),
+            "taxes": {"vat": f(self.vat), "duty": f(self.duty)},
+            "fees": {
+                "plate": f(self.plate), "srtc": f(self.srtc), "eptc": f(self.eptc),
+                "sbkts": f(self.sbkts), "sos": f(self.sos), "customs_fee": f(self.customs_fee),
+                "broker_service": f(self.broker_service), "red_corridor": f(self.red_corridor),
+                "adblue": f(self.adblue), "driver": f(self.driver), "insurance": f(self.insurance),
+                "toll_road": f(self.toll_road), "svh": f(self.svh),
+            },
+            "duty_rules": adv.get("duty_rules", {}),
+            "car": adv.get("car", {}),
+            "current_year": adv.get("current_year", 2026),
+        }

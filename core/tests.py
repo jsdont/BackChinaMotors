@@ -729,3 +729,22 @@ class UserAdminPasswordTest(TestCase):
         user = form.save()
         self.assertNotEqual(user.password, "pw1234567")  # хранится хэш, не открытый
         self.assertIsNotNone(authenticate(username="+77012223344", password="pw1234567"))
+
+
+class CalcConfigTest(TestCase):
+    """Настройки калькулятора правятся в админке и отдаются эндпоинтом."""
+
+    def test_endpoint_reflects_admin_edits(self):
+        from core.models import CalcConfig
+        cfg = CalcConfig.load()
+        cfg.sos = 88888
+        cfg.sbkts = 175000
+        cfg.save()
+        res = self.client.get("/api/calc-config/")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["fees"]["sos"], 88888.0)
+        self.assertEqual(data["fees"]["sbkts"], 175000.0)
+        self.assertIn("mrp_by_year", data)
+        self.assertIn("car", data)
+        self.assertIn("duty_rules", data)

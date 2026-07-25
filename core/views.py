@@ -619,3 +619,13 @@ class PaymentInfoView(APIView):
 
     def get(self, request):
         return Response({"instructions": getattr(dj_settings, "PAYMENT_INSTRUCTIONS", "") or ""})
+
+
+class CalcConfigView(APIView):
+    """Настройки калькулятора (сборы/налоги/курсы) для фронтенда. Публичный
+    доступ — калькулятор открыт всем. Правится в админке (CalcConfig)."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .models import CalcConfig
+        return Response(CalcConfig.load().to_config())

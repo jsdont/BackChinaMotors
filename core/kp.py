@@ -365,11 +365,13 @@ def build_kp_pdf(deal):
 
 
 def _recipients(deal):
-    """Список получателей: клиент + почта компании (без дублей и пустых)."""
+    """Список получателей: явный e-mail для КП + клиент + почта компании
+    (без дублей и пустых)."""
     to = []
-    email = getattr(deal.customer, "email", None)
-    if email:
-        to.append(email)
+    for email in (getattr(deal, "kp_email", "") or "",
+                  getattr(deal.customer, "email", None) or ""):
+        if email and email not in to:
+            to.append(email)
     company = _cfg("COMPANY_EMAIL", "") or ""
     if company and company not in to:
         to.append(company)
