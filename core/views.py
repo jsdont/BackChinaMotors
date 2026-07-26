@@ -823,3 +823,66 @@ class ManagerDealKPView(APIView):
             return Response({"error": "Не удалось отправить КП"}, status=500)
         log_activity(deal, request.user, "КП отправлено на почту", internal=True)
         return Response({"status": "ok", "recipients": _recipients(deal)})
+
+
+class ManagerManualKPView(APIView):
+    """Ручной конструктор КП: менеджер сам задаёт технику и данные.
+
+    GET  ?vehicle_id=N — подтянуть данные техники из каталога для формы.
+    POST — собрать КП: ?send=1 отправляет письмом (recipients), иначе отдаёт PDF.
+    """
+    permission_classes = [IsManager]
+
+    def get(self, request):
+        from .kp import _vehicle_dict_from_catalog
+        vid = request.query_params.get("vehicle_id")
+        if not vid:
+            return Response({"error": "Не указан vehicle_id"}, status=400)
+        data = _vehicle_dict_from_catalog(vid)
+        if not data:
+            return Response({"error": "Техника не найдена"}, status=404)
+        return Response(data)
+
+    def post(self, request):
+        from django.http import HttpResponse
+        from .kp import build_manual_kp_pdf, send_manual_kp
+
+        spec = request.data if isinstance(request.data, dict) else {}
+        recipients = spec.get("recipients") or []
+        if isinstance(recipients, str):
+            recipients = [e.strip() for e in recipients.replace(";", ",").split(",") if e.strip()]
+
+        if spec.get("send"):
+            if not recipients:
+                return Response({"error": "Укажите e-mail получателя"}, status=400)
+            if not send_manual_kp(spec, recipients):
+                return Response({"error": "Не удалось отправить КП"}, status=500)
+            return Response({"status": "ok", "recipients": recipients})
+
+        pdf = build_manual_kp_pdf(spec)
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = 'attachment; filename="KP.pdf"'
+        return resp
+
+
+class ManagerVehicleSearchView(APIView):
+    """Поиск техники в каталоге для конструктора КП: ?q=shacman."""
+    permission_classes = [IsManager]
+
+    def get(self, request):
+        from cars.models import Vehicle
+        from django.db.models import Q
+        q = (request.query_params.get("q") or "").strip()
+        qs = Vehicle.objects.all()
+        if q:
+            qs = qs.filter(Q(brand__icontains=q) | Q(model__icontains=q)
+                           | Q(body_type__icontains=q) | Q(category__icontains=q))
+        return Response([
+            {
+                "id": v.id,
+                "label": " ".join(x for x in [v.body_type or f"{v.brand} {v.model}".strip(),
+                                              str(v.year or "")] if x).strip(),
+                "price_usd": v.price_usd, "price_cny": v.price_cny,
+            }
+            for v in qs.order_by("-id")[:40]
+        ])

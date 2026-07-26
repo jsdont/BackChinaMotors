@@ -227,9 +227,20 @@ def _render_breakdown(deal, h, para, pdf):
     pdf.ln(3)
 
 
-def build_kp_pdf(deal):
-    """Собрать КП по сделке и вернуть содержимое PDF (bytes)."""
+def build_kp_pdf(deal, extras=None):
+    """Собрать КП и вернуть содержимое PDF (bytes).
+
+    extras (необязательно) позволяет переопределить поля, которых нет в сделке —
+    используется ручным конструктором КП в кабинете менеджера:
+        number            — номер в шапке вместо «№ сделки»
+        buyer_name        — покупатель
+        quantity          — количество единиц техники
+        availability_note — строка о наличии («15 единиц в Хоргосе»)
+        timeline          — свой список сроков вместо шаблонного
+    """
     from fpdf import FPDF  # ленивый импорт — тянем зависимость только при генерации
+
+    extras = extras or {}
 
     # fontTools при встраивании шрифта сыпет INFO-логами про subsetting — глушим.
     logging.getLogger("fontTools").setLevel(logging.WARNING)
@@ -267,8 +278,10 @@ def build_kp_pdf(deal):
 
     # --- Заголовок --------------------------------------------------------
     h("Коммерческое предложение", 17)
-    para(f"№ сделки: {deal.pk}    Дата: {date.today().strftime('%d.%m.%Y')}")
-    name = _customer_name(customer)
+    number = extras.get("number") or (f"№ сделки: {deal.pk}" if getattr(deal, "pk", None) else "")
+    head_line = f"{number}    " if number else ""
+    para(f"{head_line}Дата: {date.today().strftime('%d.%m.%Y')}")
+    name = extras.get("buyer_name") or _customer_name(customer)
     if name:
         para(f"Покупатель: {name}")
     pdf.ln(3)
@@ -310,9 +323,23 @@ def build_kp_pdf(deal):
     pdf.ln(1)
 
     # Таблица: Кол-во | Цена USD | Цена CNY | Сумма ₸
+    try:
+        qty = max(1, int(extras.get("quantity") or 1))
+    except (TypeError, ValueError):
+        qty = 1
+    raw_kzt = (vehicle.price_kzt if (vehicle and vehicle.price_kzt) else None)
+    if raw_kzt is None:
+        raw_kzt = getattr(deal, "total_price", None)
+    total_kzt = None
+    if raw_kzt is not None:
+        try:
+            total_kzt = float(raw_kzt) * qty
+        except (TypeError, ValueError):
+            total_kzt = raw_kzt
+
     price_usd = _fmt_amount(vehicle.price_usd) if vehicle else ""
     price_cny = _fmt_amount(vehicle.price_cny) if vehicle else ""
-    price_kzt = _fmt_amount(vehicle.price_kzt if (vehicle and vehicle.price_kzt) else deal.total_price)
+    price_kzt = _fmt_amount(total_kzt)
     with pdf.table(
         col_widths=(20, 27, 27, 26),
         text_align=("CENTER", "RIGHT", "RIGHT", "RIGHT"),
@@ -323,11 +350,16 @@ def build_kp_pdf(deal):
         for head in ("Кол-во", "Цена, USD", "Цена, CNY", "Сумма, ₸"):
             row.cell(head)
         row = table.row()
-        row.cell("1")
+        row.cell(str(qty))
         row.cell(price_usd or "по запросу")
         row.cell(price_cny or "—")
         row.cell(price_kzt or "по запросу")
-    pdf.ln(3)
+    pdf.ln(2)
+
+    availability = (extras.get("availability_note") or "").strip()
+    if availability:
+        para(availability)
+    pdf.ln(2)
 
     # --- Характеристики ---------------------------------------------------
     specs = _vehicle_specs(vehicle)
@@ -342,9 +374,12 @@ def build_kp_pdf(deal):
 
     # --- Условия и сроки поставки ----------------------------------------
     h("Условия поставки", 12)
-    para(f"Условия поставки: {_delivery_terms(tpl)}", bold=True)
+    para(f"Условия поставки: {extras.get('delivery_terms') or _delivery_terms(tpl)}", bold=True)
     pdf.ln(1)
-    for step in _timeline(tpl):
+    steps = extras.get("timeline")
+    if isinstance(steps, str):
+        steps = [s.strip() for s in steps.splitlines() if s.strip()]
+    for step in (steps or _timeline(tpl)):
         para(f"•  {step}")
     pdf.ln(3)
 
@@ -407,4 +442,126 @@ def send_kp_for_deal(deal):
         return True
     except Exception as e:  # noqa: BLE001 — отправка КП не должна ронять создание сделки
         log.warning("KP send failed for deal %s: %s", getattr(deal, "pk", None), e)
+        return False
+
+
+# ============================================================================
+#  Ручной конструктор КП (кабинет менеджера) — без привязки к сделке
+# ============================================================================
+
+class _ManualVehicle:
+    """Техника для КП, собранная вручную или из карточки каталога."""
+
+    def __init__(self, d):
+        g = d.get
+        self.brand = g("brand", "") or ""
+        self.model = g("model", "") or ""
+        self.year = g("year") or None
+        self.body_type = g("title", "") or ""
+        self.category = g("category", "") or ""
+        self.city = g("city", "") or ""
+        self.extra_info = g("description", "") or ""
+        self.weight_t = g("weight_t") or None
+        self.wheel_formula = g("wheel_formula", "") or ""
+        self.gearbox = g("gearbox", "") or ""
+        self.engine_power_hp = g("engine_power_hp") or None
+        self.load_capacity_t = g("load_capacity_t") or None
+        self.price_usd = g("price_usd") or None
+        self.price_cny = g("price_cny") or None
+        self.price_kzt = g("price_kzt") or None
+        self.image_url = g("image_url", "") or ""
+        self.images = g("images") or []
+
+
+class _ManualDeal:
+    """Минимальная «сделка» для генератора: только то, что читает build_kp_pdf."""
+
+    pk = None
+    calc_rows = None       # строк расчёта нет — _breakdown_from_rows вернёт None
+    kp_email = ""
+
+    def __init__(self, vehicle, total_price=None, breakdown=None):
+        self.vehicle = vehicle
+        self.customer = None
+        self.total_price = total_price
+        self.calc_breakdown = breakdown
+
+
+def _vehicle_dict_from_catalog(vehicle_id):
+    """Данные техники из каталога — как основа для ручного КП."""
+    from cars.models import Vehicle
+    v = Vehicle.objects.filter(pk=vehicle_id).first()
+    if not v:
+        return None
+    return {
+        "brand": v.brand, "model": v.model, "year": v.year,
+        "title": v.body_type, "category": v.category, "city": v.city,
+        "description": v.extra_info,
+        "weight_t": v.weight_t, "wheel_formula": v.wheel_formula,
+        "gearbox": v.gearbox, "engine_power_hp": v.engine_power_hp,
+        "load_capacity_t": v.load_capacity_t,
+        "price_usd": v.price_usd, "price_cny": v.price_cny, "price_kzt": v.price_kzt,
+        "image_url": v.image_url, "images": v.images,
+    }
+
+
+def build_manual_kp_pdf(spec):
+    """Собрать КП из произвольных данных (ручной конструктор).
+
+    spec: {
+      vehicle_id?      — взять данные из каталога (поля ниже их переопределяют),
+      title, description, brand, model, year, category, wheel_formula,
+      weight_t, gearbox, engine_power_hp, load_capacity_t, image_url,
+      price_usd, price_cny, price_kzt,
+      quantity, buyer_name, number, availability_note,
+      delivery_terms, timeline (строка/список),
+      breakdown  — {"groups": [...], "total": n} для блока расчёта
+    }
+    """
+    data = {}
+    if spec.get("vehicle_id"):
+        data = _vehicle_dict_from_catalog(spec["vehicle_id"]) or {}
+    # Явно переданные поля важнее данных из каталога.
+    for key in ("title", "description", "brand", "model", "year", "category",
+                "city", "wheel_formula", "weight_t", "gearbox", "engine_power_hp",
+                "load_capacity_t", "image_url", "price_usd", "price_cny", "price_kzt"):
+        if spec.get(key) not in (None, ""):
+            data[key] = spec[key]
+
+    vehicle = _ManualVehicle(data)
+    deal = _ManualDeal(vehicle, total_price=data.get("price_kzt"),
+                       breakdown=spec.get("breakdown"))
+    extras = {
+        "number": spec.get("number") or "",
+        "buyer_name": spec.get("buyer_name") or "",
+        "quantity": spec.get("quantity") or 1,
+        "availability_note": spec.get("availability_note") or "",
+        "delivery_terms": spec.get("delivery_terms") or "",
+        "timeline": spec.get("timeline"),
+    }
+    return build_kp_pdf(deal, extras)
+
+
+def send_manual_kp(spec, recipients):
+    """Отправить ручное КП письмом. Возвращает True/False."""
+    to = [e.strip() for e in (recipients or []) if e and e.strip()]
+    if not to:
+        return False
+    try:
+        pdf_bytes = build_manual_kp_pdf(spec)
+        title = _vehicle_title(_ManualVehicle(spec))
+        msg = EmailMessage(
+            subject=spec.get("subject") or "Коммерческое предложение — China Motors",
+            body=("Здравствуйте!\n\nВо вложении — коммерческое предложение"
+                  f"{(' по позиции ' + title) if title else ''}.\n\n"
+                  "С уважением,\nChina Motors"),
+            from_email=_cfg("DEFAULT_FROM_EMAIL", None),
+            to=to,
+        )
+        msg.attach("KP.pdf", pdf_bytes, "application/pdf")
+        msg.send(fail_silently=True)
+        log.info("Manual KP sent to %s", ", ".join(to))
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("Manual KP send failed: %s", e)
         return False

@@ -867,3 +867,66 @@ class ManagerKPEndpointTest(TestCase):
     def test_non_manager_forbidden(self):
         res = self._c(self.customer).get(f"/api/manager/deals/{self.deal.id}/kp/")
         self.assertEqual(res.status_code, 403)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class ManualKPTest(TestCase):
+    """Ручной конструктор КП: техника из каталога или введённая вручную."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000030001", password="p", role="MANAGER", is_staff=True)
+        self.customer = User.objects.create_user(phone="+77000030002", password="p", role="CUSTOMER_PERSON")
+
+    def _mgr(self):
+        c = APIClient(); c.force_authenticate(user=self.manager); return c
+
+    def test_manual_pdf_without_catalog(self):
+        res = self._mgr().post("/api/manager/kp/build/", {
+            "title": "Тягач SHACMAN X3000", "description": "Euro 5, 460 л.с.",
+            "price_usd": 43491, "price_cny": 294000, "quantity": 2,
+            "buyer_name": "ТОО Покупатель", "number": "КП-17",
+            "availability_note": "Техника в наличии 15 единиц в Хоргосе.",
+            "timeline": "Экспортная декларация — 2 дня.\nДоставка до СВХ — 2 дня.",
+        }, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "application/pdf")
+        self.assertTrue(res.content.startswith(b"%PDF"))
+
+    def test_prefill_from_catalog_and_quantity_multiplies_total(self):
+        from cars.models import Vehicle
+        v = Vehicle.objects.create(brand="SHACMAN", model="X3000", year=2025,
+                                   body_type="Тягач SHACMAN X3000",
+                                   price_usd=Decimal("43491.00"), price_kzt=Decimal("1000000.00"))
+        pre = self._mgr().get(f"/api/manager/kp/build/?vehicle_id={v.id}")
+        self.assertEqual(pre.status_code, 200)
+        self.assertEqual(pre.data["title"], "Тягач SHACMAN X3000")
+
+        from core.kp import build_manual_kp_pdf
+        pdf = build_manual_kp_pdf({"vehicle_id": v.id, "quantity": 3})
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        import fitz
+        txt = "".join(p.get_text() for p in fitz.open(stream=pdf, filetype="pdf"))
+        self.assertIn("3 000 000", txt.replace(" ", " "))  # 1 000 000 × 3
+
+    def test_send_manual_kp_by_email(self):
+        from django.core import mail
+        res = self._mgr().post("/api/manager/kp/build/", {
+            "title": "Самосвал", "send": True, "recipients": "buyer@example.com",
+        }, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("buyer@example.com", mail.outbox[0].to)
+        self.assertEqual(len(mail.outbox[0].attachments), 1)
+
+    def test_send_requires_recipient(self):
+        res = self._mgr().post("/api/manager/kp/build/", {"title": "X", "send": True}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_vehicle_search_and_permissions(self):
+        from cars.models import Vehicle
+        Vehicle.objects.create(brand="SHACMAN", model="X6000", body_type="Тягач X6000")
+        res = self._mgr().get("/api/manager/vehicles/search/?q=shacman")
+        self.assertEqual(res.status_code, 200)
+        self.assertGreaterEqual(len(res.data), 1)
+        c = APIClient(); c.force_authenticate(user=self.customer)
+        self.assertEqual(c.post("/api/manager/kp/build/", {"title": "X"}, format="json").status_code, 403)
