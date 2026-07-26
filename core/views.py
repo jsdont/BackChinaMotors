@@ -795,3 +795,31 @@ class ChangePasswordView(APIView):
         user.set_password(new)
         user.save()
         return Response({"status": "ok"})
+
+
+class ManagerDealKPView(APIView):
+    """КП по сделке: GET — скачать PDF, POST — отправить письмом."""
+    permission_classes = [IsManager]
+
+    def get(self, request, deal_id):
+        from django.http import HttpResponse
+        from .kp import build_kp_pdf
+        deal = get_object_or_404(Deal, pk=deal_id)
+        pdf = build_kp_pdf(deal)
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="KP_deal_{deal.pk}.pdf"'
+        return resp
+
+    def post(self, request, deal_id):
+        from .kp import send_kp_for_deal, _recipients
+        deal = get_object_or_404(Deal, pk=deal_id)
+        if not _recipients(deal):
+            return Response(
+                {"error": "Некуда отправлять: у клиента нет e-mail. "
+                          "Укажите «E-mail для КП» в сделке."},
+                status=400,
+            )
+        if not send_kp_for_deal(deal):
+            return Response({"error": "Не удалось отправить КП"}, status=500)
+        log_activity(deal, request.user, "КП отправлено на почту", internal=True)
+        return Response({"status": "ok", "recipients": _recipients(deal)})

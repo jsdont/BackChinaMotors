@@ -831,3 +831,39 @@ class MeProfilePasswordTest(TestCase):
         self.assertEqual(res2.status_code, 200)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("brandnew1"))
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", KP_AUTOSEND=False)
+class ManagerKPEndpointTest(TestCase):
+    """Менеджер может скачать КП и отправить его на почту."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(phone="+77000023001", password="p", role="MANAGER", is_staff=True)
+        self.customer = User.objects.create_user(phone="+77000023002", password="p", role="CUSTOMER_PERSON")
+        self.deal = Deal.objects.create(customer=self.customer, title="КП тест")
+
+    def _c(self, u):
+        c = APIClient(); c.force_authenticate(user=u); return c
+
+    def test_download_pdf(self):
+        res = self._c(self.manager).get(f"/api/manager/deals/{self.deal.id}/kp/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "application/pdf")
+        self.assertTrue(res.content.startswith(b"%PDF"))
+
+    def test_send_requires_recipient(self):
+        with override_settings(COMPANY_EMAIL=""):
+            res = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/kp/", {}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_send_uses_kp_email(self):
+        from django.core import mail
+        self.deal.kp_email = "buyer@example.com"
+        self.deal.save()
+        res = self._c(self.manager).post(f"/api/manager/deals/{self.deal.id}/kp/", {}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("buyer@example.com", mail.outbox[0].to)
+
+    def test_non_manager_forbidden(self):
+        res = self._c(self.customer).get(f"/api/manager/deals/{self.deal.id}/kp/")
+        self.assertEqual(res.status_code, 403)

@@ -44,6 +44,7 @@ from core.views import (
     ManagerAssignmentDeleteView,
     MeView,
     ChangePasswordView,
+    ManagerDealKPView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -97,6 +98,7 @@ urlpatterns = [
     path("api/manager/deals/<int:deal_id>/assignments/", ManagerDealAssignmentsView.as_view(), name="manager_deal_assignments"),
     path("api/manager/assignments/<int:pk>/", ManagerAssignmentDeleteView.as_view(), name="manager_assignment_delete"),
     path("api/manager/service-users/", ManagerServiceUsersView.as_view(), name="manager_service_users"),
+    path("api/manager/deals/<int:deal_id>/kp/", ManagerDealKPView.as_view(), name="manager_deal_kp"),
 
     path("api/me/", MeView.as_view(), name="me"),
     path("api/me/password/", ChangePasswordView.as_view(), name="me_password"),
