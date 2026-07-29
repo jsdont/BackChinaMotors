@@ -173,15 +173,16 @@ class DealSerializer(serializers.ModelSerializer):
     assignments = DealAssignmentSerializer(many=True, read_only=True)
     customer_info = serializers.SerializerMethodField()
     vehicle_title = serializers.SerializerMethodField()
+    route = serializers.SerializerMethodField()   
 
     class Meta:
         model = Deal
         fields = [
             "id", "customer", "customer_info", "vehicle", "vehicle_title",
             "title", "status", "total_price", "is_paid",
-            "created_at", "updated_at", "assignments",
+            "created_at", "updated_at", "assignments", "route",   
         ]
-        read_only_fields = ["id", "customer", "created_at", "updated_at", "assignments"]
+        read_only_fields = ["id", "customer", "created_at", "updated_at", "assignments", "route"]
 
     def get_customer_info(self, obj):
         return _user_label(obj.customer)
@@ -191,6 +192,8 @@ class DealSerializer(serializers.ModelSerializer):
         if not v:
             return None
         return v.body_type or f"{v.brand} {v.model}".strip()
+    def get_route(self, obj):
+        return obj.get_route()
 
 
 class DealCreateSerializer(serializers.Serializer):
@@ -211,6 +214,7 @@ class DealCreateSerializer(serializers.Serializer):
 
         title = validated_data.get("title") or (str(vehicle) if vehicle else "")
         deal = Deal.objects.create(customer=user, vehicle=vehicle, title=title)
+        DealStage.objects.create(deal=deal, slug="sbkts", title="СБКТС")
         return deal
 
 
@@ -270,11 +274,14 @@ class DealStatusUpdateSerializer(serializers.ModelSerializer):
     """Менеджер редактирует сделку из веб-кабинета: этап, отметку об оплате
     и стоимость сделки (для финансового отчёта). Все поля необязательные —
     можно прислать только то, что меняется (PATCH)."""
+    route = serializers.SerializerMethodField()
 
     class Meta:
         model = Deal
-        fields = ["id", "status", "is_paid", "total_price"]
+        fields = ["id", "status", "is_paid", "total_price", "route"]
         read_only_fields = ["id"]
+    def get_route(self, obj):
+        return obj.get_route()
 
 
 class PaymentCreateSerializer(serializers.ModelSerializer):

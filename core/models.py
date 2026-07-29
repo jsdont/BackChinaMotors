@@ -142,6 +142,25 @@ class Manager(models.Model):
     def __str__(self):
         return self.user.phone
 
+STATUS_TO_NODE = {
+    "AGREEMENT": None,
+    "CONTRACT": None,
+    "PURCHASE_CHINA": "factory",
+    "DELIVERY_KZ": "khorgos",
+    "SVH": "khorgos",
+    "CUSTOMS": "customs",
+    "DELIVERY_CLIENT": "almaty",
+    "COMPLETED": "handover",
+}
+
+ROUTE_NODES = [
+    ("factory", "ЗАВОД"),
+    ("khorgos", "ХОРГОС"),
+    ("customs", "ТАМОЖНЯ"),
+    ("sbkts", "СБКТС"),
+    ("almaty", "АЛМАТЫ"),
+    ("handover", "ВЫДАЧА"),
+]
 
 class Deal(models.Model):
     STATUS_CHOICES = (
@@ -176,7 +195,45 @@ class Deal(models.Model):
 
     def __str__(self):
         return self.title or f"Сделка #{self.pk}"
+    
+    def get_route(self):
+        import datetime
+        current_node = STATUS_TO_NODE.get(self.status)
+        node_order = [n for n, _ in ROUTE_NODES]
+        current_index = node_order.index(current_node) if current_node else -1
 
+        sbkts_stage = self.stages.filter(slug="sbkts").first()
+        today = datetime.date.today()
+
+        route = []
+        for i, (node_id, label) in enumerate(ROUTE_NODES):
+            if node_id == "sbkts":
+                if sbkts_stage is None:
+                    state, planned_at, done_at = "todo", None, None
+                elif sbkts_stage.is_done:
+                    state, planned_at, done_at = "done", sbkts_stage.planned_at, sbkts_stage.done_at
+                elif sbkts_stage.planned_at and sbkts_stage.planned_at < today:
+                    state, planned_at, done_at = "overdue", sbkts_stage.planned_at, None
+                else:
+                    state, planned_at, done_at = "todo", sbkts_stage.planned_at, None
+            else:
+                if current_index == -1:
+                    state = "todo"
+                elif i < current_index:
+                    state = "done"
+                elif i == current_index:
+                    state = "active"
+                else:
+                    state = "todo"
+                planned_at, done_at = None, None  # заполните из реальных дат по сделке, если они у вас есть отдельно
+
+            route.append({
+                "node": node_id, "label": label, "state": state,
+                "planned_at": planned_at.isoformat() if planned_at else None,
+                "done_at": done_at.isoformat() if done_at else None,
+            })
+        return route
+    
     def sync_calc_rows(self, data):
         """Пересоздать строки расчёта (DealCalcRow) из dict-детализации вида
         {"groups": [{"title": str, "rows": [[label, amount], ...]}, ...]}.
@@ -316,14 +373,14 @@ class Expense(models.Model):
 
 
 class DealStage(models.Model):
-    # Кастомный этап сделки («конструктор сценариев»): менеджер составляет
-    # для конкретной сделки свой план из произвольных шагов сверх фиксированной
-    # воронки Deal.status. Клиент видит этот план (чек-лист) — прозрачность.
     deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="stages")
     title = models.CharField(max_length=255)
+    slug = models.CharField(max_length=50, blank=True, default="") 
     order = models.PositiveIntegerField(default=0)
     is_done = models.BooleanField(default=False)
     note = models.CharField(max_length=500, blank=True, default="")
+    planned_at = models.DateField(null=True, blank=True) 
+    done_at = models.DateField(null=True, blank=True)   
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
