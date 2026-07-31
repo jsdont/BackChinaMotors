@@ -886,3 +886,134 @@ class ManagerVehicleSearchView(APIView):
             }
             for v in qs.order_by("-id")[:40]
         ])
+
+
+# ============================================================================
+#  Мгновенное КП по технике из каталога — публичное, без сделки и менеджера
+# ============================================================================
+
+# Кэш общий для JSON и PDF: считаются они из одного и того же расчёта, и
+# разъезжаться им нельзя. Час — компромисс между «не пересчитывать на каждый
+# клик» и «не показывать вчерашний курс».
+KP_CACHE_TTL = 60 * 60
+
+
+def _kp_cache_key(vehicle, kind, rates):
+    """Ключ: техника + дата + курс.
+
+    Дата — потому что в документе стоит дата выдачи, и вчерашний PDF отдавать
+    сегодня нельзя. Курс — потому что от него зависит вся разбивка; сменился
+    курс, и прежний документ обесценился сам, без ручной инвалидации.
+    updated_at техники в ключе тоже: правка цены или характеристик в админке
+    должна отражаться сразу, а не через час.
+    """
+    from datetime import date
+    stamp = getattr(vehicle, "updated_at", None) or getattr(vehicle, "created_at", None)
+    stamp = stamp.isoformat() if stamp else "-"
+    return (
+        f"kp:{kind}:{vehicle.id}:{date.today().isoformat()}"
+        f":{rates['usd_kzt']}:{rates['cny_kzt']}:{stamp}"
+    )
+
+
+def _client_ip(request):
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded:
+        # За прокси (fly.io) первый адрес в цепочке — реальный клиент.
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR") or None
+
+
+def _log_kp_download(request, vehicle, kind):
+    """Тихая отметка интереса. Никогда не мешает выдаче документа."""
+    try:
+        from .models import KPDownloadLog
+        KPDownloadLog.objects.create(
+            vehicle=vehicle,
+            kind=kind,
+            ip=_client_ip(request),
+            user_agent=(request.META.get("HTTP_USER_AGENT") or "")[:300],
+        )
+    except Exception as e:  # noqa: BLE001 — лог не может стоить клиенту КП
+        import logging
+        logging.getLogger(__name__).info("KP download log failed: %s", e)
+
+
+def _public_vehicle_or_404(vehicle_id):
+    """Только то, что реально показано в каталоге: КП по неодобренному или
+    скрытому объявлению выдавать нельзя — это документ от лица компании."""
+    from cars.models import Vehicle
+    return get_object_or_404(Vehicle, pk=vehicle_id, is_approved=True)
+
+
+class InstantKPView(APIView):
+    """GET /api/kp/<vehicle_id>/ — данные КП для страницы /kp/<id>.
+
+    Публичный: КП выдаётся до захвата лида, авторизация здесь означала бы
+    ровно ту форму, ради отмены которой всё и делалось.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, vehicle_id):
+        from django.core.cache import cache
+        from . import calc
+        from .kp_instant import build_instant_kp
+
+        vehicle = _public_vehicle_or_404(vehicle_id)
+        cfg = calc.load_config()
+        rates = calc.live_rates(cfg)
+
+        # Абсолютный адрес PDF собираем из самого запроса: сайт и API живут
+        # на разных хостах, и относительная ссылка увела бы браузер за
+        # документом на chinamotors.kz, где его нет.
+        base_url = request.build_absolute_uri("/").rstrip("/")
+
+        key = _kp_cache_key(vehicle, "json", rates) + f":{base_url}"
+        data = cache.get(key)
+        if data is None:
+            data = build_instant_kp(vehicle, cfg=cfg, rates=rates, base_url=base_url)
+            cache.set(key, data, KP_CACHE_TTL)
+
+        _log_kp_download(request, vehicle, "json")
+        return Response(data)
+
+
+class InstantKPPDFView(APIView):
+    """GET /api/kp/<vehicle_id>/pdf/ — официальный PDF с печатью и подписью.
+
+    Отдаёт файл, а не JSON. Тот же шаблон, что у КП по сделке.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, vehicle_id):
+        from django.core.cache import cache
+        from django.http import HttpResponse
+        from . import calc
+        from .kp_instant import build_instant_kp_pdf
+
+        vehicle = _public_vehicle_or_404(vehicle_id)
+        cfg = calc.load_config()
+        rates = calc.live_rates(cfg)
+
+        key = _kp_cache_key(vehicle, "pdf", rates)
+        pdf = cache.get(key)
+        if pdf is None:
+            # Сборка PDF со встраиванием шрифта и фото — единственная
+            # по-настоящему дорогая операция в этом эндпоинте, ради неё кэш
+            # и заведён: без него каждый клик рендерил бы документ заново.
+            try:
+                pdf = build_instant_kp_pdf(vehicle, cfg=cfg, rates=rates)
+            except Exception as e:  # noqa: BLE001
+                import logging
+                logging.getLogger(__name__).exception("Instant KP PDF failed: %s", e)
+                return Response({"detail": "Не удалось собрать КП."}, status=500)
+            cache.set(key, pdf, KP_CACHE_TTL)
+
+        _log_kp_download(request, vehicle, "pdf")
+
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        # inline, а не attachment: со страницы КП файл открывается в новой
+        # вкладке, и человек сначала смотрит документ, а потом решает,
+        # сохранять ли. Имя файла всё равно осмысленное, если сохранит.
+        resp["Content-Disposition"] = f'inline; filename="KP-{vehicle.id}.pdf"'
+        return resp

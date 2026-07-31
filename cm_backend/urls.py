@@ -47,6 +47,8 @@ from core.views import (
     ManagerDealKPView,
     ManagerManualKPView,
     ManagerVehicleSearchView,
+    InstantKPView,
+    InstantKPPDFView,
 )
 from app.webhooks import tawk_webhook, contacts_form
 from cars.views import rates_view, sitemap_vehicles
@@ -64,6 +66,12 @@ urlpatterns = [
     path("api/", include("cars.urls")),
     path("api/contacts/", contacts_form),
     path("api/rates/", rates_view),
+
+    # Мгновенное КП по технике из каталога — публичное, без сделки.
+    # Порядок важен: .../pdf/ объявлен раньше, иначе его съел бы маршрут
+    # выше как часть vehicle_id.
+    path("api/kp/<int:vehicle_id>/pdf/", InstantKPPDFView.as_view(), name="instant_kp_pdf"),
+    path("api/kp/<int:vehicle_id>/", InstantKPView.as_view(), name="instant_kp"),
 
     path("api/auth/login/", PhoneTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

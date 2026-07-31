@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.forms import Textarea
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings, CalcConfig
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings, CalcConfig, KPDownloadLog
 
 
 @admin.register(CalcConfig)
@@ -354,3 +354,23 @@ class DealActivityAdmin(admin.ModelAdmin):
     list_display = ("deal", "text", "actor", "internal", "created_at")
     list_filter = ("internal",)
     search_fields = ("deal__title", "text")
+
+
+@admin.register(KPDownloadLog)
+class KPDownloadLogAdmin(admin.ModelAdmin):
+    """Кто и по какой технике забрал КП — интерес до обращения.
+
+    Только чтение: это след события, а не карточка, которую редактируют.
+    Добавлять записи руками тоже незачем — их пишет эндпоинт.
+    """
+    list_display = ("created_at", "vehicle", "kind", "ip")
+    list_filter = ("kind", "created_at")
+    search_fields = ("vehicle__brand", "vehicle__model", "vehicle__body_type", "ip")
+    date_hierarchy = "created_at"
+    readonly_fields = ("vehicle", "kind", "ip", "user_agent", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

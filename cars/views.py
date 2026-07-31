@@ -116,29 +116,52 @@ def _parse_rate(text, code):
     return float(match.group(1)) if match else None
 
 
-def rates_view(request):
+# Неудачу кэшируем ненадолго, а удачу — на полный срок. Без короткого
+# «отрицательного» кэша каждый запрос при недоступном фиде снова перебирал бы
+# пять дат по 5 секунд (до 25 с ожидания), и это било бы по выдаче КП, который
+# ходит за курсом на каждый запрос. С длинным — транзитный сбой залипал бы на
+# десять минут и курс не показывался бы дольше, чем он реально отсутствовал.
+_RATES_FAIL_TTL = 60
+
+
+def get_rates():
+    """Курсы НБ РК с кэшем. Возвращает {"usd_kzt": .., "cny_kzt": ..}, где
+    значения могут быть None; исключений не бросает.
+
+    Отдельная функция, потому что за курсом ходит не только /api/rates/, но и
+    генератор мгновенного КП (core.calc.live_rates), и общий кэш им нужен
+    один на двоих.
+    """
     now = time.time()
-    if _RATES_CACHE["data"] and now - _RATES_CACHE["fetched_at"] < _RATES_CACHE_TTL:
-        return JsonResponse(_RATES_CACHE["data"])
+    cached = _RATES_CACHE["data"]
+    if cached:
+        ok = bool(cached.get("usd_kzt") and cached.get("cny_kzt"))
+        ttl = _RATES_CACHE_TTL if ok else _RATES_FAIL_TTL
+        if now - _RATES_CACHE["fetched_at"] < ttl:
+            return dict(cached)
 
     try:
         text = _fetch_nbk_text()
-
         data = {
             "usd_kzt": _parse_rate(text, "USD"),
             "cny_kzt": _parse_rate(text, "CNY"),
         }
+    except Exception as e:  # noqa: BLE001 — источник внешний, падать не должен
+        data = {"usd_kzt": None, "cny_kzt": None, "error": f"{type(e).__name__}: {e}"}
 
-        if data["usd_kzt"] and data["cny_kzt"]:
-            _RATES_CACHE["data"] = data
-            _RATES_CACHE["fetched_at"] = now
+    _RATES_CACHE["data"] = data
+    _RATES_CACHE["fetched_at"] = now
+    return dict(data)
 
-        return JsonResponse(data)
-    except Exception as e:
-        return JsonResponse(
-            {"usd_kzt": None, "cny_kzt": None, "error": f"{type(e).__name__}: {e}"},
-            status=502,
-        )
+
+def rates_view(request):
+    # Коды ответа сохранены как были: 502 только когда до фида не достучались,
+    # а «достучались, но курса нет» по-прежнему 200 с null — на это поведение
+    # уже опирается фронтенд (home.js, calculator.js).
+    data = get_rates()
+    if "error" in data:
+        return JsonResponse(data, status=502)
+    return JsonResponse(data)
 
 
 def sitemap_vehicles(request):

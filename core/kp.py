@@ -237,6 +237,8 @@ def build_kp_pdf(deal, extras=None):
         quantity          — количество единиц техники
         availability_note — строка о наличии («15 единиц в Хоргосе»)
         timeline          — свой список сроков вместо шаблонного
+        unit_price_kzt    — цена за единицу для ячейки «Сумма, ₸»; имеет
+                            приоритет над vehicle.price_kzt
     """
     from fpdf import FPDF  # ленивый импорт — тянем зависимость только при генерации
 
@@ -327,7 +329,15 @@ def build_kp_pdf(deal, extras=None):
         qty = max(1, int(extras.get("quantity") or 1))
     except (TypeError, ValueError):
         qty = 1
-    raw_kzt = (vehicle.price_kzt if (vehicle and vehicle.price_kzt) else None)
+    # Приоритет: явно переданная цена за единицу → цена из карточки → сумма
+    # сделки. Явный override нужен мгновенному КП (core/kp_instant.py): там
+    # ячейка «Сумма, ₸» обязана показывать тот же итог, что и разбивка ниже
+    # на этой же странице, а vehicle.price_kzt заводится руками и с расчётом
+    # сходится только пока его сводит менеджер. Документ, показывающий два
+    # разных итога, хуже документа с приблизительным одним.
+    raw_kzt = extras.get("unit_price_kzt")
+    if raw_kzt is None:
+        raw_kzt = (vehicle.price_kzt if (vehicle and vehicle.price_kzt) else None)
     if raw_kzt is None:
         raw_kzt = getattr(deal, "total_price", None)
     total_kzt = None
