@@ -559,3 +559,44 @@ class CalcConfig(models.Model):
             "car": adv.get("car", {}),
             "current_year": adv.get("current_year", 2026),
         }
+
+
+class KPDownloadLog(models.Model):
+    """След скачивания мгновенного КП — сигнал интереса до обращения.
+
+    Смысл кнопки «Получить КП» в том, что человек проявляет интерес раньше,
+    чем звонит. Раньше этот момент был виден только когда клиент сам
+    выходил на связь; теперь он виден сразу, и менеджер понимает, какая
+    техника вызывает интерес, ещё до первого разговора.
+
+    Намеренно НЕ создаётся Deal со статусом LEAD: сделка — это документ с
+    клиентом, стадиями и деньгами, а здесь клиента нет вообще, только
+    анонимный посетитель. Пустые сделки засорили бы и воронку менеджера, и
+    статистику. Отдельная запись ничего не ломает и ни к чему не обязывает.
+
+    Запись никогда не блокирует выдачу PDF: если лог не пишется, документ
+    всё равно уходит (см. вызов в core/views.py).
+    """
+
+    vehicle = models.ForeignKey(
+        "cars.Vehicle", on_delete=models.CASCADE, related_name="kp_downloads",
+        verbose_name="Техника",
+    )
+    # Формат КП, который забрали: страница или подписанный PDF.
+    KIND_CHOICES = (("json", "Страница КП"), ("pdf", "PDF с подписью"))
+    kind = models.CharField("Формат", max_length=8, choices=KIND_CHOICES, default="pdf")
+    # IP нужен, чтобы отличить десять скачиваний одним человеком от десяти
+    # разных интересов. Больше о посетителе ничего не пишем: ни параметров
+    # запроса, ни referer — это КП, а не аналитика.
+    ip = models.GenericIPAddressField("IP", null=True, blank=True)
+    user_agent = models.CharField("User-Agent", max_length=300, blank=True, default="")
+    created_at = models.DateTimeField("Когда", auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Скачивание КП"
+        verbose_name_plural = "Скачивания КП"
+        indexes = [models.Index(fields=["-created_at"])]
+
+    def __str__(self):
+        return f"{self.vehicle_id} · {self.get_kind_display()} · {self.created_at:%d.%m.%Y %H:%M}"
