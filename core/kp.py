@@ -335,15 +335,32 @@ def build_kp_pdf(deal, extras=None):
     # на этой же странице, а vehicle.price_kzt заводится руками и с расчётом
     # сходится только пока его сводит менеджер. Документ, показывающий два
     # разных итога, хуже документа с приблизительным одним.
+    # Цена в КП должна совпадать с итогом калькулятора.
+    # Приоритет:
+    # 1. Явно переданная цена (для специальных КП)
+    # 2. Итог калькулятора (calc_breakdown / DealCalcRow)
+    # 3. Старая цена из карточки техники — только если расчёта нет.
+    
     raw_kzt = extras.get("unit_price_kzt")
+    
     if raw_kzt is None:
-        raw_kzt = (vehicle.price_kzt if (vehicle and vehicle.price_kzt) else None)
+        breakdown = _breakdown_from_rows(deal) or getattr(
+            deal, "calc_breakdown", None
+        )
+    
+        if isinstance(breakdown, dict) and breakdown.get("total") is not None:
+            raw_kzt = breakdown["total"]
+    
     if raw_kzt is None:
         raw_kzt = getattr(deal, "total_price", None)
+    
+    if raw_kzt is None:
+        raw_kzt = vehicle.price_kzt if (vehicle and vehicle.price_kzt) else None
+    
     total_kzt = None
     if raw_kzt is not None:
         try:
-            total_kzt = float(raw_kzt) * qty
+            total_kzt = float(raw_kzt)
         except (TypeError, ValueError):
             total_kzt = raw_kzt
 
