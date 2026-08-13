@@ -98,7 +98,8 @@ def build_instant_kp(vehicle, quantity=1, cfg=None, rates=None, base_url=""):
     rate = breakdown["currency"]["usd_kzt"]
     cny_rate = breakdown["currency"]["cny_kzt"]
     
-    price_cny = float(vehicle.price_cny) if vehicle.price_cny else None
+    cny_usd_rate = (rate / cny_rate) - 0.02
+    price_usd = price_cny / cny_usd_rate
     
     if price_cny and cny_rate and rate:
         cny_usd_rate = (rate / cny_rate) - 0.02
