@@ -299,7 +299,6 @@ def compute_breakdown(vehicle, cfg=None, rates=None):
     price_cny = _num(vehicle.price_cny)
     
     if price_cny and cny_rate and rate:
-        # Используем ту же формулу, что и calculator.js
         CNY_USD_MARGIN = 0.02
         cny_usd_rate = (rate / cny_rate) - CNY_USD_MARGIN
         price_usd = price_cny / cny_usd_rate
@@ -363,7 +362,14 @@ def compute_breakdown(vehicle, cfg=None, rates=None):
     total = sum(amount for g in groups for _, amount in g["rows"])
 
     return {
-        "currency": {"usd_kzt": rate, "cny_kzt": cny_rate},
+        "currency": {
+            "usd_kzt": rate,
+            "cny_kzt": cny_rate,
+        },
+        "price": {
+            "usd": price_usd,
+            "cny": price_cny,
+        },
         "groups": groups,
         "total": total,
     }
