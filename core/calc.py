@@ -296,11 +296,15 @@ def compute_breakdown(vehicle, cfg=None, rates=None):
 
     # Цена в долларах — основа расчёта. Если в карточке только юани,
     # переводим через курс; если нет ни того ни другого, считать нечего.
-    price_usd = _num(vehicle.price_usd)
-    if not price_usd:
-        price_cny = _num(vehicle.price_cny)
-        if price_cny and cny_rate and rate:
-            price_usd = price_cny * cny_rate / rate
+    price_cny = _num(vehicle.price_cny)
+    
+    if price_cny and cny_rate and rate:
+        # Используем ту же формулу, что и calculator.js
+        CNY_USD_MARGIN = 0.02
+        cny_usd_rate = (rate / cny_rate) - CNY_USD_MARGIN
+        price_usd = price_cny / cny_usd_rate
+    else:
+        price_usd = _num(vehicle.price_usd)
 
     fees = cfg.get("fees") or {}
     customs_fee = float(fees.get("customs_fee") or 25950)
