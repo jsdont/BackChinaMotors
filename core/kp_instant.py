@@ -159,5 +159,7 @@ def build_instant_kp_pdf(vehicle, quantity=1, cfg=None, rates=None):
         # оба числа документа должны быть одним числом. PDF умножит это
         # значение на quantity сам.
         "unit_price_kzt": per_unit,
+        "price_usd": data["price"]["usd"],
+        "price_cny": data["price"]["cny"],
     }
     return build_kp_pdf(deal, extras)
