@@ -95,7 +95,17 @@ def build_instant_kp(vehicle, quantity=1, cfg=None, rates=None, base_url=""):
     fixed = _seller_and_terms()
 
     from .kp import _vehicle_title
-
+    rate = breakdown["currency"]["usd_kzt"]
+    cny_rate = breakdown["currency"]["cny_kzt"]
+    
+    price_cny = float(vehicle.price_cny) if vehicle.price_cny else None
+    
+    if price_cny and cny_rate and rate:
+        cny_usd_rate = (rate / cny_rate) - 0.02
+        price_usd = price_cny / cny_usd_rate
+    else:
+        price_usd = float(vehicle.price_usd) if vehicle.price_usd else None
+        
     return {
         "number": _kp_number(vehicle),
         "date": date.today().isoformat(),
@@ -111,8 +121,8 @@ def build_instant_kp(vehicle, quantity=1, cfg=None, rates=None, base_url=""):
         },
         "quantity": qty,
         "price": {
-            "usd": float(vehicle.price_usd) if vehicle.price_usd else None,
-            "cny": float(vehicle.price_cny) if vehicle.price_cny else None,
+            "usd": round(price_usd, 2) if price_usd is not None else None,
+            "cny": round(price_cny, 2) if price_cny is not None else None,
             "kzt_total": breakdown["total"] * qty,
         },
         "availability_note": AVAILABILITY_NOTE.get(vehicle.availability, ""),
