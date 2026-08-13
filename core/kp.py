@@ -364,8 +364,8 @@ def build_kp_pdf(deal, extras=None):
         except (TypeError, ValueError):
             total_kzt = raw_kzt
 
-    price_usd = _fmt_amount(vehicle.price_usd) if vehicle else ""
-    price_cny = _fmt_amount(vehicle.price_cny) if vehicle else ""
+    price_usd = _fmt_amount(extras.get("price_usd"))
+    price_cny = _fmt_amount(extras.get("price_cny"))
     price_kzt = _fmt_amount(total_kzt)
     with pdf.table(
         col_widths=(20, 27, 27, 26),
