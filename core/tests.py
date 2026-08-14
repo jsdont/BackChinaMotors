@@ -1252,3 +1252,40 @@ class InstantKPEndpointTest(TestCase):
                 r = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.content.startswith(b"%PDF"))
+
+
+@override_settings(ALLOWED_HOSTS=["*", "testserver", "cm-backend-daniyal.fly.dev"])
+class InstantKPSchemeTest(TestCase):
+    """kp_pdf_url отдаётся по https, когда запрос пришёл через прокси.
+
+    Приложение стоит за прокси fly.io: снаружи HTTPS, внутрь — HTTP. Без
+    SECURE_PROXY_SSL_HEADER Django считает запрос незащищённым и собирает
+    абсолютный адрес с http://, а страница КП открывает его с HTTPS-домена.
+    """
+
+    def setUp(self):
+        from cars.models import Vehicle
+        from core.models import CalcConfig
+        from django.core.cache import cache
+        cache.clear()
+        CalcConfig.load()
+        self.vehicle = Vehicle.objects.create(
+            brand="SHACMAN", model="X3000", year=2025,
+            body_type="Самосвал SHACMAN X3000", category="Самосвал",
+            weight_t=Decimal("25.00"), price_cny=Decimal("298000.00"),
+            is_approved=True,
+        )
+
+    def test_pdf_url_is_https_behind_the_proxy(self):
+        with _stub_rates():
+            r = self.client.get(
+                f"/api/kp/{self.vehicle.id}/",
+                HTTP_HOST="cm-backend-daniyal.fly.dev",
+                HTTP_X_FORWARDED_PROTO="https",
+            )
+        url = r.json()["kp_pdf_url"]
+        self.assertEqual(url, f"https://cm-backend-daniyal.fly.dev/api/kp/{self.vehicle.id}/pdf/")
+        # Порт в адресе не появляется: get_host() берёт заголовок Host, а
+        # прокси присылает его без порта.
+        self.assertNotIn(":80", url)
+        self.assertNotIn(":8080", url)

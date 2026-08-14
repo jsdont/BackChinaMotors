@@ -56,6 +56,23 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "cm-backend-daniyal.fly.dev", "cm-backend-daniyal-blue-pond-9890.fly.dev", "chinamotors.com.kz", "www.chinamotors.com.kz"]
 
+# Приложение стоит за прокси fly.io: снаружи запрос приходит по HTTPS, а до
+# gunicorn доезжает по обычному HTTP. Без этой строки request.scheme всегда
+# "http", и любой абсолютный адрес, собранный из запроса, получается с
+# http:// — в том числе kp_pdf_url в ответе /api/kp/<id>/, который страница
+# КП открывает с HTTPS-домена.
+#
+# Правится именно scheme, а не отдельная строка URL: тем же request.scheme
+# пользуются request.is_secure(), build_absolute_uri() во всех остальных
+# местах и ссылки в письмах. Заменять "http" на "https" в одном поле значило
+# бы чинить симптом и оставить остальные.
+#
+# Безопасно, потому что до приложения нельзя достучаться мимо прокси: fly
+# сам выставляет X-Forwarded-Proto и перезаписывает присланный клиентом.
+# Если приложение когда-нибудь начнёт слушать наружу напрямую, эту строку
+# нужно убрать — иначе заголовок можно будет подделать.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 
 INSTALLED_APPS = [
     "corsheaders",
