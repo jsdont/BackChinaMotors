@@ -458,6 +458,15 @@ class KPSettings(models.Model):
                                 help_text="По одному пункту на строку")
     service_center = models.TextField("Сервис-центр", default=_d.SERVICE_CENTER)
     show_seal = models.BooleanField("Показывать печать и подпись", default=True)
+    # Сколько дней предложение остаётся в силе. Цена в КП посчитана по курсу
+    # на дату выдачи, и вечным такое обещание быть не может; по истечении
+    # срока следующее открытие ссылки выпускает новый документ с новой датой.
+    # 14 дней — стартовое значение, меняется в админке без деплоя.
+    kp_valid_days = models.PositiveIntegerField(
+        "Срок действия КП, дней", default=14,
+        help_text="Цена в КП зафиксирована по курсу на дату выдачи. "
+                  "По истечении срока документ перевыпускается автоматически.",
+    )
 
     class Meta:
         verbose_name = "Коммерческое предложение (шаблон)"
@@ -600,3 +609,66 @@ class KPDownloadLog(models.Model):
 
     def __str__(self):
         return f"{self.vehicle_id} · {self.get_kind_display()} · {self.created_at:%d.%m.%Y %H:%M}"
+
+
+class KPSnapshot(models.Model):
+    """Замороженное коммерческое предложение по технике из каталога.
+
+    КП — документ с датой, а не живое зеркало калькулятора. Пока снимка не
+    было, одна и та же ссылка /kp/<id> считалась заново при каждом открытии
+    и в разные дни называла разные суммы: курс НБ РК меняется, а вместе с
+    ним и цена в долларах, которая выводится из юаней. Клиент, вернувшийся
+    к своему же предложению, видел другое число — это подрывает доверие к
+    документу сильнее, чем любая неточность в формуле.
+
+    Теперь при первом обращении расчёт выполняется один раз и целиком
+    сохраняется здесь: курс, цены, разбивка, дата выдачи и срок действия.
+    И страница, и PDF читают ОДИН снимок, поэтому разойтись между собой не
+    могут в принципе.
+
+    Снимок перевыпускается в двух случаях, обоих законных:
+      • истёк срок действия (valid_until) — предложение больше не в силе;
+      • изменились входные данные (inputs_fingerprint) — правка цены или
+        характеристик техники в админке, либо смена сборов в CalcConfig.
+    Курс в отпечаток НЕ входит: его колебание — это ровно то, от чего
+    документ защищает.
+    """
+
+    vehicle = models.ForeignKey(
+        "cars.Vehicle", on_delete=models.CASCADE, related_name="kp_snapshots",
+        verbose_name="Техника",
+    )
+    number = models.CharField("Номер КП", max_length=64)
+    issued_on = models.DateField("Выдано", db_index=True)
+    valid_until = models.DateField("Действительно до", db_index=True)
+
+    # Курс, по которому посчитан документ. Хранится явно, а не выводится из
+    # payload: по нему видно, почему в КП именно такая цена.
+    usd_kzt = models.DecimalField("Курс USD→₸", max_digits=10, decimal_places=4)
+    cny_kzt = models.DecimalField("Курс CNY→₸", max_digits=10, decimal_places=4)
+
+    price_usd = models.DecimalField("Цена, USD", max_digits=12, decimal_places=2, null=True, blank=True)
+    price_cny = models.DecimalField("Цена, CNY", max_digits=12, decimal_places=2, null=True, blank=True)
+    total_kzt = models.DecimalField("Под ключ, ₸", max_digits=14, decimal_places=2)
+
+    # sha256 от всего, что влияет на расчёт, кроме курса.
+    inputs_fingerprint = models.CharField("Отпечаток входных данных", max_length=64, db_index=True)
+
+    # Полный ответ build_instant_kp(): страница и PDF читают именно его.
+    payload = models.JSONField("Документ")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "КП — снимок"
+        verbose_name_plural = "КП — снимки"
+        indexes = [models.Index(fields=["vehicle", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.number} (до {self.valid_until:%d.%m.%Y})"
+
+    @property
+    def is_valid(self):
+        from datetime import date
+        return self.valid_until >= date.today()

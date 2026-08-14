@@ -239,6 +239,65 @@ def _num(value, default=0.0):
         return default
 
 
+# ============================================================================
+#  Цена техники в долларах
+#
+#  Порт js/calculator.js, строки 200-206 и 807-809. Читать вместе с ними:
+#
+#      const CNY_USD_MARGIN = 0.02;
+#      function getCnyUsdRate(usdKztRate, cnyKztRate) {
+#        return (usdKztRate / cnyKztRate) - CNY_USD_MARGIN;
+#      }
+#      ...
+#      if (URL_PARAMS.priceCny && $('#basePrice')) {
+#        const cnyUsdRate = getCnyUsdRate(LIVE_USD_KZT_RATE, LIVE_CNY_KZT_RATE);
+#        $('#basePrice').value = (URL_PARAMS.priceCny / cnyUsdRate).toFixed(2);
+#      } else if (URL_PARAMS.price && $('#basePrice')) {
+#        $('#basePrice').value = URL_PARAMS.price;
+#      }
+#
+#  Три вещи, которые здесь легко потерять и каждая из которых меняет цену:
+#
+#  1. ЮАНИ ГЛАВНЕЕ. Если у карточки есть price_cny, доллары СЧИТАЮТСЯ из
+#     юаней, а сохранённый price_usd не используется вовсе. Он остаётся в
+#     базе как справочная величина и с текущим курсом обычно не сходится.
+#     Раньше бэкенд брал именно его — отсюда и было расхождение с
+#     калькулятором на той же машине.
+#  2. МАРЖА 0.02. Это не курс НБ РК, а запас на колебание при подтверждении
+#     цены, вычитаемый из кросс-курса. Без него доллары выходят меньше.
+#  3. ОКРУГЛЕНИЕ ДО КОПЕЕК. toFixed(2) на фронте не косметика: округлённое
+#     число ложится в поле и становится БАЗОЙ расчёта. Считать от полного
+#     float значит разойтись с калькулятором в последних разрядах.
+# ============================================================================
+
+CNY_USD_MARGIN = 0.02
+
+
+def cny_usd_rate(usd_kzt, cny_kzt):
+    """Кросс-курс юань→доллар из двух курсов НБ РК к тенге, минус маржа."""
+    return (usd_kzt / cny_kzt) - CNY_USD_MARGIN
+
+
+def resolve_price(vehicle, rates):
+    """Цена техники в долларах и юанях — ровно как её видит калькулятор.
+
+    Возвращает {"usd": float, "cny": float|None}. usd округлён до копеек:
+    именно это число становится базой расчёта, как и на фронте.
+    """
+    cny = _num(vehicle.price_cny)
+    usd_kzt = float(rates["usd_kzt"])
+    cny_kzt = float(rates["cny_kzt"])
+
+    if cny and usd_kzt and cny_kzt:
+        cross = cny_usd_rate(usd_kzt, cny_kzt)
+        if cross > 0:
+            return {"usd": round(cny / cross, 2), "cny": cny}
+
+    # Юаней нет (или кросс-курс вырожден) — тогда работает сохранённый USD,
+    # как и во второй ветке на фронте.
+    return {"usd": _num(vehicle.price_usd), "cny": cny or None}
+
+
 def load_config():
     """Настройки калькулятора из админки — та же запись, что уходит на
     фронтенд через /api/calc-config/."""
@@ -246,26 +305,35 @@ def load_config():
     return CalcConfig.load().to_config()
 
 
-def live_rates(cfg):
-    """Курс на момент генерации: НБ РК, с откатом на запасной курс из
-    настроек. Курс попадает в ключ кэша PDF, поэтому его смена сама
-    обесценивает ранее собранные документы."""
-    fallback = {
-        "usd_kzt": float((cfg.get("currency") or {}).get("usd_kzt") or 493.11),
-        "cny_kzt": float((cfg.get("currency") or {}).get("cny_kzt") or 68.5),
-    }
+class RatesUnavailable(RuntimeError):
+    """Живого курса НБ РК нет — коммерческое предложение не выпускается."""
+
+
+def live_rates(cfg=None):
+    """Курс НБ РК на момент генерации. Бросает RatesUnavailable, если его нет.
+
+    Раньше здесь стоял тихий откат на запасной курс из CalcConfig, и это
+    оказалось хуже отказа. Запасная пара 493.11 / 68.50 даёт по той же
+    формуле 41 512 $ там, где живая 465.19 / 68.99 даёт 44 326 $ — разница
+    7% на ровном месте. В документе при этом не было ни слова о том, что
+    курс ненастоящий: КП выглядело обычным и называло цену, которой никто
+    не подтверждал. Через два дня после деплоя это и произошло.
+
+    Запасной курс остаётся уместным на калькуляторе — там человек прикидывает
+    и видит, какой курс подставлен. КП же обещает цену, поэтому без живого
+    курса оно просто не выдаётся (см. InstantKPView: 503 и внятный текст).
+    """
     try:
-        # get_rates() держит общий кэш с /api/rates/ и сама не бросает: без
-        # него каждая выдача КП ходила бы в НБ РК заново.
+        # get_rates() держит общий кэш с /api/rates/ и сама не бросает.
         from cars.views import get_rates
         data = get_rates()
-        usd, cny = data.get("usd_kzt"), data.get("cny_kzt")
-        if usd and cny:
-            return {"usd_kzt": float(usd), "cny_kzt": float(cny)}
-        log.info("KP calc: NBK rates empty, using config fallback")
-    except Exception as e:  # noqa: BLE001 — без курса НБ работаем на запасном
-        log.info("KP calc: NBK rates unavailable (%s), using config fallback", e)
-    return fallback
+    except Exception as e:  # noqa: BLE001
+        raise RatesUnavailable(f"источник курса недоступен: {e}") from e
+
+    usd, cny = data.get("usd_kzt"), data.get("cny_kzt")
+    if not usd or not cny:
+        raise RatesUnavailable(data.get("error") or "НБ РК не отдал курс USD/CNY")
+    return {"usd_kzt": float(usd), "cny_kzt": float(cny)}
 
 
 def compute_breakdown(vehicle, cfg=None, rates=None):
@@ -294,16 +362,10 @@ def compute_breakdown(vehicle, cfg=None, rates=None):
     profile = detect_profile(type_value)
     duty = duty_rate(profile, type_text, cfg)
 
-    # Цена в долларах — основа расчёта. Если в карточке только юани,
-    # переводим через курс; если нет ни того ни другого, считать нечего.
-    price_cny = _num(vehicle.price_cny)
-    
-    if price_cny and cny_rate and rate:
-        CNY_USD_MARGIN = 0.02
-        cny_usd_rate = (rate / cny_rate) - CNY_USD_MARGIN
-        price_usd = price_cny / cny_usd_rate
-    else:
-        price_usd = _num(vehicle.price_usd)
+    # Цена — единственная функция resolve_price() на весь бэкенд, порт
+    # калькулятора. Здесь её не пересчитывают и не поправляют.
+    price = resolve_price(vehicle, rates)
+    price_usd = price["usd"]
 
     fees = cfg.get("fees") or {}
     customs_fee = float(fees.get("customs_fee") or 25950)
@@ -362,14 +424,11 @@ def compute_breakdown(vehicle, cfg=None, rates=None):
     total = sum(amount for g in groups for _, amount in g["rows"])
 
     return {
-        "currency": {
-            "usd_kzt": rate,
-            "cny_kzt": cny_rate,
-        },
-        "price": {
-            "usd": price_usd,
-            "cny": price_cny,
-        },
+        "currency": {"usd_kzt": rate, "cny_kzt": cny_rate},
+        # Цена едет вместе с разбивкой, а не считается второй раз рядом:
+        # доллары выведены из юаней по тому же курсу, что и вся разбивка,
+        # и разъехаться с ней уже не могут.
+        "price": {"usd": price["usd"], "cny": price["cny"]},
         "groups": groups,
         "total": total,
     }

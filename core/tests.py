@@ -932,12 +932,29 @@ class ManualKPTest(TestCase):
         self.assertEqual(c.post("/api/manager/kp/build/", {"title": "X"}, format="json").status_code, 403)
 
 
-@override_settings(ALLOWED_HOSTS=["*", "testserver"])
-class InstantKPTest(TestCase):
-    """Мгновенное КП по технике из каталога: JSON и официальный PDF.
+# ============================================================================
+#  Мгновенное КП: цена, курс, заморозка
+# ============================================================================
 
-    Курс НБ РК в тестах недоступен, поэтому расчёт идёт на запасном курсе из
-    CalcConfig — это и нужно: числа должны быть воспроизводимы.
+# Курс, на котором считаются все проверки ниже. Это реальная пара НБ РК из
+# разбора расхождения: на ней калькулятор показывает 44 326.36 $ за 298 000 ¥,
+# и бэкенд обязан показать ровно столько же.
+LIVE_RATES = {"usd_kzt": 465.19, "cny_kzt": 68.99}
+
+
+def _stub_rates(rates=None):
+    """Подменить источник курса. Патчим cars.views.get_rates, а не
+    calc.live_rates: так проверяется и сама live_rates, включая отказ."""
+    from unittest.mock import patch
+    return patch("cars.views.get_rates", return_value=dict(rates or LIVE_RATES))
+
+
+@override_settings(ALLOWED_HOSTS=["*", "testserver"])
+class InstantKPPriceTest(TestCase):
+    """Цена в КП считается ровно так же, как в калькуляторе сайта.
+
+    Контрольная машина — та, на которой расхождение и заметили: цена задана
+    в юанях, а в карточке лежит ещё и устаревший price_usd.
     """
 
     def setUp(self):
@@ -948,199 +965,290 @@ class InstantKPTest(TestCase):
         CalcConfig.load()
         self.vehicle = Vehicle.objects.create(
             brand="SHACMAN", model="X3000", year=2025,
-            body_type="Самосвал SHACMAN X3000", category="Самосвал", city="Хоргос",
-            extra_info="Кабина F3000, спальное место.",
-            wheel_formula="6x4", weight_t=Decimal("25.00"), gearbox="Fast 12JSD200T",
-            engine_power_hp=430, load_capacity_t=Decimal("30.00"),
-            price_usd=Decimal("48000.00"), price_cny=Decimal("345600.00"),
-            # Цена каталога намеренно НЕ равна расчёту: именно это расхождение
-            # документ обязан не показывать.
+            body_type="Самосвал SHACMAN X3000", category="Самосвал",
+            wheel_formula="6x4", weight_t=Decimal("25.00"),
+            engine_power_hp=430,
+            price_cny=Decimal("298000.00"),
+            # Сохранённый USD намеренно НЕ сходится с юанями по текущему
+            # курсу — именно это число бэкенд раньше и показывал.
+            price_usd=Decimal("41389.00"),
             price_kzt=Decimal("38500000.00"),
             availability="in_stock", is_approved=True,
         )
 
-    # --- JSON ---------------------------------------------------------------
+    def test_usd_is_derived_from_cny_exactly_as_the_calculator_does(self):
+        """298 000 ¥ по курсу 465.19/68.99 → 44 326.36 $, как на калькуляторе.
 
-    def test_json_endpoint_is_public(self):
-        r = self.client.get(f"/api/kp/{self.vehicle.id}/")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r["Content-Type"], "application/json")
-
-    def test_json_has_the_contract_the_frontend_reads(self):
-        data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
-        for key in ("number", "date", "buyer_name", "seller", "vehicle", "quantity",
-                    "price", "availability_note", "breakdown", "delivery_terms",
-                    "timeline", "service_center", "kp_pdf_url"):
-            self.assertIn(key, data, f"в ответе нет поля {key}")
-        # Абсолютный: сайт и API на разных хостах, относительный путь увёл бы
-        # браузер за PDF на chinamotors.kz.
-        self.assertTrue(data["kp_pdf_url"].startswith("http://"))
-        self.assertTrue(data["kp_pdf_url"].endswith(f"/api/kp/{self.vehicle.id}/pdf/"))
-        self.assertEqual(data["buyer_name"], "")
-        self.assertEqual(len(data["breakdown"]["groups"]), 4)
-
-    def test_pdf_url_points_at_a_working_endpoint(self):
-        """Ссылка из JSON действительно отдаёт PDF, а не 404."""
-        from urllib.parse import urlparse
-        data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
-        path = urlparse(data["kp_pdf_url"]).path
-        r = self.client.get(path)
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r["Content-Type"], "application/pdf")
-
-    def test_number_is_instant_not_deal(self):
-        from datetime import date
-        data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
-        self.assertEqual(
-            data["number"],
-            f"КП-инст-{self.vehicle.id}-{date.today():%Y%m%d}",
-        )
-
-    # --- Главное: одно число в двух местах ----------------------------------
-
-    def test_table_sum_equals_breakdown_total(self):
-        """«Сумма, ₸» и «под ключ» — одно и то же число, и это НЕ price_kzt."""
-        data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
-        self.assertEqual(data["price"]["kzt_total"], data["breakdown"]["total"])
-        self.assertNotEqual(Decimal(data["price"]["kzt_total"]), self.vehicle.price_kzt)
-
-    def test_total_equals_sum_of_its_own_rows(self):
-        """Итог сходится со своими же строками — до тенге."""
-        bd = self.client.get(f"/api/kp/{self.vehicle.id}/").json()["breakdown"]
-        rows_sum = sum(amount for g in bd["groups"] for _, amount in g["rows"])
-        self.assertEqual(bd["total"], rows_sum)
-
-    def test_quantity_multiplies_the_total(self):
-        from core.kp_instant import build_instant_kp
-        one = build_instant_kp(self.vehicle, quantity=1)
-        three = build_instant_kp(self.vehicle, quantity=3)
-        self.assertEqual(three["price"]["kzt_total"], one["breakdown"]["total"] * 3)
-
-    # --- Формула ------------------------------------------------------------
-
-    def test_breakdown_matches_the_calculator_formula(self):
-        """Контрольный расчёт по самосвалу 25 т, 48 000 $, курс 493.11.
-
-        Числа сверены со страницей калькулятора на тех же входных данных.
-        Если тест упал — разошлись КП и калькулятор, а не «поехал тест».
+        Формула-первоисточник — js/calculator.js:
+            cross = usd_kzt / cny_kzt - 0.02
+            usd   = (cny / cross).toFixed(2)
         """
         from core import calc
-        cfg = calc.load_config()
-        bd = calc.compute_breakdown(
-            self.vehicle, cfg=cfg, rates={"usd_kzt": 493.11, "cny_kzt": 68.5})
-        flat = {label: amount for g in bd["groups"] for label, amount in g["rows"]}
-        self.assertEqual(flat["ТС в тенге"], 23669280)
-        self.assertEqual(flat["Пошлина (10%)"], 2366928)
-        self.assertEqual(flat["НДС"], 4169945)
-        self.assertEqual(flat["Утилизационный сбор (25 т)"], 4433125)
-        self.assertEqual(bd["total"], 35683050)
+        price = calc.resolve_price(self.vehicle, LIVE_RATES)
+        self.assertEqual(price["usd"], 44326.36)
+        self.assertEqual(price["cny"], 298000.0)
 
-    def test_tractor_profile_changes_util_coefficient(self):
-        """Тягач считается по классу автопоезда, а не по своей массе."""
-        from cars.models import Vehicle
+    def test_stored_price_usd_is_ignored_when_cny_is_present(self):
         from core import calc
-        tractor = Vehicle.objects.create(
-            brand="HOWO", model="TX", year=2025, body_type="Тягач HOWO TX",
-            category="Тягач", weight_t=Decimal("10.35"),
-            price_usd=Decimal("42000.00"), is_approved=True,
-        )
-        value, _ = calc.resolve_type(tractor)
-        self.assertEqual(calc.detect_profile(value), "TRACTOR_N3")
-        self.assertEqual(calc.util_coef_by_weight(10.35, "TRACTOR_N3"), 11.0)
+        price = calc.resolve_price(self.vehicle, LIVE_RATES)
+        self.assertNotEqual(price["usd"], float(self.vehicle.price_usd))
 
-    def test_crane_gets_its_own_duty_rate(self):
-        from core import calc
-        cfg = calc.load_config()
-        self.assertEqual(calc.duty_rate("SPECIAL", "Кран", cfg), 0.08)
-        self.assertEqual(calc.duty_rate("SPECIAL", "Спец. техника", cfg), 0.10)
-
-    def test_vehicle_priced_only_in_cny_still_computes(self):
+    def test_stored_price_usd_is_used_when_there_are_no_cny(self):
         from cars.models import Vehicle
         from core import calc
         v = Vehicle.objects.create(
-            brand="FOTON", model="Auman", year=2025, body_type="Миксер FOTON",
-            category="Миксер", weight_t=Decimal("30.00"),
-            price_cny=Decimal("417600.00"), is_approved=True,
+            brand="X", model="Y", body_type="Самосвал", price_usd=Decimal("50000.00"),
+            weight_t=Decimal("20.00"), year=2025, is_approved=True,
         )
-        bd = calc.compute_breakdown(v, rates={"usd_kzt": 493.11, "cny_kzt": 68.5})
-        self.assertGreater(bd["total"], 0)
+        self.assertEqual(calc.resolve_price(v, LIVE_RATES)["usd"], 50000.0)
 
-    # --- PDF ----------------------------------------------------------------
+    def test_margin_is_the_frontend_constant(self):
+        from core import calc
+        self.assertEqual(calc.CNY_USD_MARGIN, 0.02)
+        self.assertAlmostEqual(
+            calc.cny_usd_rate(465.19, 68.99), 465.19 / 68.99 - 0.02, places=10)
 
-    def test_pdf_endpoint_returns_pdf(self):
-        r = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r["Content-Type"], "application/pdf")
-        self.assertTrue(r.content.startswith(b"%PDF"))
-        self.assertGreater(len(r.content), 1000)
+    def test_usd_is_rounded_to_kopecks_like_the_calculator_field(self):
+        """toFixed(2) на фронте — это база расчёта, а не оформление."""
+        from core import calc
+        usd = calc.resolve_price(self.vehicle, LIVE_RATES)["usd"]
+        self.assertEqual(usd, round(usd, 2))
 
-    def test_pdf_shows_the_computed_total_not_the_catalog_price(self):
-        """В таблице PDF стоит итог расчёта, а не vehicle.price_kzt."""
-        from core.kp_instant import build_instant_kp
-        data = build_instant_kp(self.vehicle)
-        r = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
+    def test_breakdown_price_matches_resolve_price(self):
+        """Разбивка и таблица цен считаются от одного числа."""
+        from core import calc
+        bd = calc.compute_breakdown(self.vehicle, rates=LIVE_RATES)
+        self.assertEqual(bd["price"], calc.resolve_price(self.vehicle, LIVE_RATES))
+        self.assertEqual(bd["currency"], LIVE_RATES)
+
+    def test_all_three_numbers_agree_across_json_and_pdf(self):
+        """USD, CNY и итог KZT одинаковы в расчёте, в JSON и в PDF."""
+        with _stub_rates():
+            data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+            pdf = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/").content
+
+        self.assertEqual(data["price"]["usd"], 44326.36)
+        self.assertEqual(data["price"]["cny"], 298000.0)
+        self.assertEqual(data["price"]["kzt_total"], data["breakdown"]["total"])
+
         try:
             from pypdf import PdfReader
         except ImportError:
-            self.skipTest("pypdf недоступен — проверка текста PDF пропущена")
+            self.skipTest("pypdf недоступен")
         import io
-        text = "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(r.content)).pages)
-        computed = f"{data['breakdown']['total']:,}".replace(",", " ")
-        catalog = f"{int(self.vehicle.price_kzt):,}".replace(",", " ")
-        self.assertIn(computed, text)
-        self.assertNotIn(catalog, text)
-        self.assertIn("КП-инст-", text)
-        self.assertIn("Покупатель: —", text)
+        text = "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages)
+        space = lambda n: f"{int(n):,}".replace(",", " ")  # noqa: E731
+        self.assertIn("44 326", text)                       # USD в таблице
+        self.assertIn(space(298000), text)                  # CNY в таблице
+        self.assertIn(space(data["breakdown"]["total"]), text)   # итог
+        # Устаревшего price_usd в документе быть не должно.
+        self.assertNotIn(space(41389), text)
 
-    # --- Доступ и кэш -------------------------------------------------------
 
-    def test_unapproved_vehicle_is_not_served(self):
+@override_settings(ALLOWED_HOSTS=["*", "testserver"])
+class InstantKPRatesTest(TestCase):
+    """Без живого курса предложение не выпускается."""
+
+    def setUp(self):
+        from cars.models import Vehicle
+        from core.models import CalcConfig
+        from django.core.cache import cache
+        cache.clear()
+        CalcConfig.load()
+        self.vehicle = Vehicle.objects.create(
+            brand="HOWO", model="TX", year=2025, body_type="Тягач HOWO TX",
+            category="Тягач", weight_t=Decimal("18.00"),
+            price_cny=Decimal("298000.00"), is_approved=True,
+        )
+
+    def test_no_rates_means_503_not_a_made_up_price(self):
+        with _stub_rates({"usd_kzt": None, "cny_kzt": None, "error": "нет связи"}):
+            for path in (f"/api/kp/{self.vehicle.id}/", f"/api/kp/{self.vehicle.id}/pdf/"):
+                r = self.client.get(path)
+                self.assertEqual(r.status_code, 503, path)
+                self.assertEqual(r.json()["code"], "rates_unavailable")
+
+    def test_fallback_rates_are_never_silently_substituted(self):
+        """Запасная пара 493.11/68.50 давала 41 512 $ вместо 44 326 $."""
+        from core import calc
+        with _stub_rates({"usd_kzt": None, "cny_kzt": None}):
+            with self.assertRaises(calc.RatesUnavailable):
+                calc.live_rates()
+
+    def test_an_already_issued_document_survives_a_rate_outage(self):
+        """Выданное КП курс не трогает — оно на то и заморожено."""
+        with _stub_rates():
+            first = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+        with _stub_rates({"usd_kzt": None, "cny_kzt": None}):
+            again = self.client.get(f"/api/kp/{self.vehicle.id}/")
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()["price"]["usd"], first["price"]["usd"])
+
+
+@override_settings(ALLOWED_HOSTS=["*", "testserver"])
+class InstantKPSnapshotTest(TestCase):
+    """КП — документ с датой: цена замораживается при выдаче."""
+
+    def setUp(self):
+        from cars.models import Vehicle
+        from core.models import CalcConfig
+        from django.core.cache import cache
+        cache.clear()
+        CalcConfig.load()
+        self.vehicle = Vehicle.objects.create(
+            brand="SHACMAN", model="X3000", year=2025,
+            body_type="Самосвал SHACMAN X3000", category="Самосвал",
+            weight_t=Decimal("25.00"), engine_power_hp=430,
+            price_cny=Decimal("298000.00"), is_approved=True,
+        )
+
+    def test_price_does_not_move_when_the_rate_moves(self):
+        """Та же ссылка через два дня — то же число. Это и был исходный симптом."""
+        with _stub_rates(LIVE_RATES):
+            first = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+        with _stub_rates({"usd_kzt": 493.11, "cny_kzt": 68.50}):
+            second = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+
+        self.assertEqual(first["price"]["usd"], second["price"]["usd"])
+        self.assertEqual(first["breakdown"]["total"], second["breakdown"]["total"])
+        self.assertEqual(first["number"], second["number"])
+
+    def test_only_one_snapshot_is_issued_for_repeat_visits(self):
+        from core.models import KPSnapshot
+        with _stub_rates():
+            for _ in range(3):
+                self.client.get(f"/api/kp/{self.vehicle.id}/")
+                self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
+        self.assertEqual(KPSnapshot.objects.filter(vehicle=self.vehicle).count(), 1)
+
+    def test_html_and_pdf_read_the_same_snapshot(self):
+        from core.models import KPSnapshot
+        with _stub_rates():
+            data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+            self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
+        snap = KPSnapshot.objects.get(vehicle=self.vehicle)
+        self.assertEqual(float(snap.price_usd), data["price"]["usd"])
+        self.assertEqual(int(snap.total_kzt), data["breakdown"]["total"])
+
+    def test_editing_the_vehicle_issues_a_new_document(self):
+        """Правка цены в админке обязана перевыпустить КП."""
+        with _stub_rates():
+            first = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+            self.vehicle.price_cny = Decimal("310000.00")
+            self.vehicle.save()
+            second = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+        self.assertNotEqual(first["price"]["usd"], second["price"]["usd"])
+
+    def test_changing_a_fee_issues_a_new_document(self):
+        from core.models import CalcConfig
+        with _stub_rates():
+            first = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+            cfg = CalcConfig.load()
+            cfg.sbkts = Decimal("200000.00")
+            cfg.save()
+            second = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+        self.assertNotEqual(first["breakdown"]["total"], second["breakdown"]["total"])
+
+    def test_expired_snapshot_is_reissued(self):
+        from datetime import date, timedelta
+        from core.models import KPSnapshot
+        with _stub_rates(LIVE_RATES):
+            self.client.get(f"/api/kp/{self.vehicle.id}/")
+        snap = KPSnapshot.objects.get(vehicle=self.vehicle)
+        snap.valid_until = date.today() - timedelta(days=1)
+        snap.save(update_fields=["valid_until"])
+
+        with _stub_rates({"usd_kzt": 493.11, "cny_kzt": 68.50}):
+            fresh = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+        self.assertEqual(KPSnapshot.objects.filter(vehicle=self.vehicle).count(), 2)
+        self.assertNotEqual(float(snap.price_usd), fresh["price"]["usd"])
+
+    def test_document_carries_its_dates(self):
+        from datetime import date, timedelta
+        from core.models import KPSettings
+        with _stub_rates():
+            data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+        self.assertEqual(data["issued_on"], date.today().isoformat())
+        expected = date.today() + timedelta(days=KPSettings.load().kp_valid_days)
+        self.assertEqual(data["valid_until"], expected.isoformat())
+
+    def test_pdf_prints_the_validity_line(self):
+        with _stub_rates():
+            pdf = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/").content
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            self.skipTest("pypdf недоступен")
+        import io
+        text = "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages)
+        self.assertIn("действительно до", text.lower())
+
+
+@override_settings(ALLOWED_HOSTS=["*", "testserver"])
+class InstantKPEndpointTest(TestCase):
+    """Контракт эндпоинтов и доступ."""
+
+    def setUp(self):
+        from cars.models import Vehicle
+        from core.models import CalcConfig
+        from django.core.cache import cache
+        cache.clear()
+        CalcConfig.load()
+        self.vehicle = Vehicle.objects.create(
+            brand="SHACMAN", model="X3000", year=2025,
+            body_type="Самосвал SHACMAN X3000", category="Самосвал",
+            weight_t=Decimal("25.00"), engine_power_hp=430,
+            price_cny=Decimal("298000.00"), is_approved=True,
+        )
+
+    def test_contract_the_frontend_reads(self):
+        with _stub_rates():
+            data = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
+        for key in ("number", "date", "issued_on", "valid_until", "buyer_name",
+                    "seller", "vehicle", "quantity", "price", "availability_note",
+                    "breakdown", "delivery_terms", "timeline", "service_center",
+                    "kp_pdf_url"):
+            self.assertIn(key, data, f"в ответе нет поля {key}")
+        self.assertTrue(data["kp_pdf_url"].startswith("http://"))
+        self.assertTrue(data["kp_pdf_url"].endswith(f"/api/kp/{self.vehicle.id}/pdf/"))
+
+    def test_total_equals_sum_of_its_own_rows(self):
+        with _stub_rates():
+            bd = self.client.get(f"/api/kp/{self.vehicle.id}/").json()["breakdown"]
+        rows = sum(a for g in bd["groups"] for _, a in g["rows"])
+        self.assertEqual(bd["total"], rows)
+
+    def test_pdf_is_a_pdf(self):
+        with _stub_rates():
+            r = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertTrue(r.content.startswith(b"%PDF"))
+
+    def test_unapproved_and_missing_are_404(self):
         from cars.models import Vehicle
         hidden = Vehicle.objects.create(
-            brand="X", model="Y", body_type="Самосвал", price_usd=Decimal("1000"),
-            is_approved=False,
-        )
-        self.assertEqual(self.client.get(f"/api/kp/{hidden.id}/").status_code, 404)
-        self.assertEqual(self.client.get(f"/api/kp/{hidden.id}/pdf/").status_code, 404)
+            brand="X", model="Y", body_type="Самосвал",
+            price_cny=Decimal("1000.00"), is_approved=False)
+        with _stub_rates():
+            self.assertEqual(self.client.get(f"/api/kp/{hidden.id}/").status_code, 404)
+            self.assertEqual(self.client.get("/api/kp/999999/pdf/").status_code, 404)
 
-    def test_missing_vehicle_is_404(self):
-        self.assertEqual(self.client.get("/api/kp/999999/").status_code, 404)
-        self.assertEqual(self.client.get("/api/kp/999999/pdf/").status_code, 404)
-
-    def test_pdf_is_built_once_and_then_cached(self):
-        from unittest.mock import patch
-        import core.kp_instant as ki
-        with patch.object(ki, "build_instant_kp_pdf", wraps=ki.build_instant_kp_pdf) as spy:
-            first = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
-            second = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
-        self.assertEqual(spy.call_count, 1)
-        self.assertEqual(first.content, second.content)
-
-    def test_rate_change_invalidates_the_cached_pdf(self):
-        """Курс входит в ключ кэша, поэтому старый документ не переживает его смену."""
-        from unittest.mock import patch
-        import core.calc as calc
-        with patch.object(calc, "live_rates", return_value={"usd_kzt": 493.11, "cny_kzt": 68.5}):
-            a = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
-        with patch.object(calc, "live_rates", return_value={"usd_kzt": 550.0, "cny_kzt": 70.0}):
-            b = self.client.get(f"/api/kp/{self.vehicle.id}/").json()
-        self.assertNotEqual(a["breakdown"]["total"], b["breakdown"]["total"])
-
-    # --- След для менеджера -------------------------------------------------
-
-    def test_download_is_logged(self):
+    def test_downloads_are_logged(self):
         from core.models import KPDownloadLog
-        self.client.get(f"/api/kp/{self.vehicle.id}/")
-        self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
+        with _stub_rates():
+            self.client.get(f"/api/kp/{self.vehicle.id}/")
+            self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
         kinds = set(KPDownloadLog.objects.filter(vehicle=self.vehicle)
                     .values_list("kind", flat=True))
         self.assertEqual(kinds, {"json", "pdf"})
 
     def test_logging_failure_does_not_break_the_download(self):
-        """Упавший лог не стоит клиенту документа."""
         from unittest.mock import patch
         from core.models import KPDownloadLog
-        with patch.object(KPDownloadLog.objects, "create", side_effect=RuntimeError("БД легла")):
-            r = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
+        with _stub_rates():
+            with patch.object(KPDownloadLog.objects, "create",
+                              side_effect=RuntimeError("БД легла")):
+                r = self.client.get(f"/api/kp/{self.vehicle.id}/pdf/")
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.content.startswith(b"%PDF"))

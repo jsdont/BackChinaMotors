@@ -83,6 +83,42 @@ def _fmt_amount(value):
     return f"{n:,}".replace(",", " ")
 
 
+def _fmt_price(value):
+    """Цена в валюте: 44326.36 -> '44 326.36', 298000 -> '298 000'.
+
+    Отдельно от _fmt_amount, который округляет до целых. В тенге копейки
+    бессмысленны, а вот доллары сравнивают с полем калькулятора, где стоит
+    ровно два знака (toFixed(2)) — округлив здесь, мы показали бы 44 326
+    против 44 326.36 и снова дали повод думать, что цены разъехались.
+    """
+    if value is None or value == "":
+        return ""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    whole = f"{int(abs(n)):,}".replace(",", " ")
+    sign = "-" if n < 0 else ""
+    kop = round(abs(n) - int(abs(n)), 2)
+    if kop:
+        # Десятичная запятая, как в русской типографике и как на странице КП
+        # (Intl.NumberFormat('ru-RU')). С точкой одно и то же число выглядело
+        # бы в двух форматах документа по-разному.
+        return f"{sign}{whole},{int(round(kop * 100)):02d}"
+    return f"{sign}{whole}"
+
+
+def _fmt_iso_date(value):
+    """'2026-07-31' -> '31.07.2026'. Пустое/кривое значение — пустая строка."""
+    if not value:
+        return ""
+    try:
+        from datetime import date as _date
+        return _date.fromisoformat(str(value)).strftime("%d.%m.%Y")
+    except (TypeError, ValueError):
+        return ""
+
+
 def _vehicle_title(vehicle):
     """Короткое наименование товара для строки таблицы."""
     if not vehicle:
@@ -282,10 +318,19 @@ def build_kp_pdf(deal, extras=None):
     h("Коммерческое предложение", 17)
     number = extras.get("number") or (f"№ сделки: {deal.pk}" if getattr(deal, "pk", None) else "")
     head_line = f"{number}    " if number else ""
-    para(f"{head_line}Дата: {date.today().strftime('%d.%m.%Y')}")
+    # Дата выдачи — из документа, если он заморожен (мгновенное КП хранит её
+    # в снимке), иначе сегодняшняя. Перевыпуск снимка через месяц не должен
+    # молча проставить в старом PDF свежую дату.
+    issued = _fmt_iso_date(extras.get("issued_on")) or date.today().strftime("%d.%m.%Y")
+    para(f"{head_line}Дата: {issued}")
     name = extras.get("buyer_name") or _customer_name(customer)
     if name:
         para(f"Покупатель: {name}")
+    # Срок действия предложения. Цена посчитана по курсу на дату выдачи, и
+    # бессрочной быть не может — в бумажных КП компании эта строка тоже есть.
+    valid_until = _fmt_iso_date(extras.get("valid_until"))
+    if valid_until:
+        para(f"Предложение действительно до: {valid_until}", bold=True)
     pdf.ln(3)
 
     # --- Продавец / реквизиты --------------------------------------------
@@ -342,30 +387,38 @@ def build_kp_pdf(deal, extras=None):
     # 3. Старая цена из карточки техники — только если расчёта нет.
     
     raw_kzt = extras.get("unit_price_kzt")
-    
+
     if raw_kzt is None:
-        breakdown = _breakdown_from_rows(deal) or getattr(
-            deal, "calc_breakdown", None
-        )
-    
+        breakdown = _breakdown_from_rows(deal) or getattr(deal, "calc_breakdown", None)
         if isinstance(breakdown, dict) and breakdown.get("total") is not None:
             raw_kzt = breakdown["total"]
-    
+
     if raw_kzt is None:
         raw_kzt = getattr(deal, "total_price", None)
-    
+
     if raw_kzt is None:
         raw_kzt = vehicle.price_kzt if (vehicle and vehicle.price_kzt) else None
-    
+
     total_kzt = None
     if raw_kzt is not None:
         try:
-            total_kzt = float(raw_kzt)
+            # Всё, что попадает в raw_kzt, — цена ЗА ЕДИНИЦУ, поэтому умножаем.
+            # Без множителя КП на две машины показывало бы в «Сумма, ₸» цену
+            # одной, расходясь со строкой «под ключ» на странице, где
+            # количество учтено (kp_instant: breakdown.total * qty).
+            total_kzt = float(raw_kzt) * qty
         except (TypeError, ValueError):
             total_kzt = raw_kzt
 
-    price_usd = _fmt_amount(extras.get("price_usd"))
-    price_cny = _fmt_amount(extras.get("price_cny"))
+    # Цены в долларах и юанях тоже переопределяемы. Мгновенное КП передаёт
+    # сюда доллары из расчёта (выведенные из юаней по курсу документа), а не
+    # vehicle.price_usd: сохранённое в карточке число живёт своей жизнью и с
+    # текущим курсом обычно не сходится. Для КП по сделке ничего не меняется —
+    # extras там этих ключей не содержит.
+    price_usd = _fmt_price(extras.get("price_usd") if extras.get("price_usd") is not None
+                           else (vehicle.price_usd if vehicle else None))
+    price_cny = _fmt_price(extras.get("price_cny") if extras.get("price_cny") is not None
+                           else (vehicle.price_cny if vehicle else None))
     price_kzt = _fmt_amount(total_kzt)
     with pdf.table(
         col_widths=(20, 27, 27, 26),
