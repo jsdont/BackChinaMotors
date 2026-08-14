@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.forms import Textarea
-from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings, CalcConfig, KPDownloadLog
+from .models import User, Client, Company, ServiceProvider, Bank, Partner, Deal, DealAssignment, Comment, Payment, Document, Expense, DealStage, DealMedia, DealActivity, DealCalcRow, KPSettings, CalcConfig, KPDownloadLog, KPSnapshot
 
 
 @admin.register(CalcConfig)
@@ -368,6 +368,29 @@ class KPDownloadLogAdmin(admin.ModelAdmin):
     search_fields = ("vehicle__brand", "vehicle__model", "vehicle__body_type", "ip")
     date_hierarchy = "created_at"
     readonly_fields = ("vehicle", "kind", "ip", "user_agent", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+@admin.register(KPSnapshot)
+class KPSnapshotAdmin(admin.ModelAdmin):
+    """Выданные КП: по какому курсу и на какой срок зафиксирована цена.
+
+    Только чтение. Снимок — это выпущенный документ: править его задним
+    числом значит менять цену в предложении, которое клиент уже видел.
+    Нужен другой расчёт — удалите снимок, следующее открытие выпустит новый.
+    """
+    list_display = ("number", "vehicle", "issued_on", "valid_until",
+                    "price_usd", "total_kzt", "usd_kzt", "cny_kzt")
+    list_filter = ("issued_on", "valid_until")
+    search_fields = ("number", "vehicle__brand", "vehicle__model", "vehicle__body_type")
+    date_hierarchy = "issued_on"
+    readonly_fields = ("vehicle", "number", "issued_on", "valid_until", "usd_kzt",
+                       "cny_kzt", "price_usd", "price_cny", "total_kzt",
+                       "inputs_fingerprint", "payload", "created_at")
 
     def has_add_permission(self, request):
         return False

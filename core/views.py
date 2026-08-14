@@ -892,28 +892,16 @@ class ManagerVehicleSearchView(APIView):
 #  Мгновенное КП по технике из каталога — публичное, без сделки и менеджера
 # ============================================================================
 
-# Кэш общий для JSON и PDF: считаются они из одного и того же расчёта, и
-# разъезжаться им нельзя. Час — компромисс между «не пересчитывать на каждый
-# клик» и «не показывать вчерашний курс».
+# Кэш держит только отрендеренные байты PDF. Что показывать, решает снимок
+# (KPSnapshot), а не срок жизни кэша — поэтому ключ теперь строится по id
+# снимка, и час здесь означает лишь «как часто перерисовывать один и тот же
+# неизменный документ».
+#
+# Прежний ключ включал курс и дату, а инвалидацию по правке техники пытался
+# делать через vehicle.updated_at — поля, которого у Vehicle нет вовсе, так
+# что правка цены в админке кэш не сбрасывала. Снимок закрывает и это:
+# входные данные попадают в его отпечаток.
 KP_CACHE_TTL = 60 * 60
-
-
-def _kp_cache_key(vehicle, kind, rates):
-    """Ключ: техника + дата + курс.
-
-    Дата — потому что в документе стоит дата выдачи, и вчерашний PDF отдавать
-    сегодня нельзя. Курс — потому что от него зависит вся разбивка; сменился
-    курс, и прежний документ обесценился сам, без ручной инвалидации.
-    updated_at техники в ключе тоже: правка цены или характеристик в админке
-    должна отражаться сразу, а не через час.
-    """
-    from datetime import date
-    stamp = getattr(vehicle, "updated_at", None) or getattr(vehicle, "created_at", None)
-    stamp = stamp.isoformat() if stamp else "-"
-    return (
-        f"kp:{kind}:{vehicle.id}:{date.today().isoformat()}"
-        f":{rates['usd_kzt']}:{rates['cny_kzt']}:{stamp}"
-    )
 
 
 def _client_ip(request):
@@ -939,6 +927,31 @@ def _log_kp_download(request, vehicle, kind):
         logging.getLogger(__name__).info("KP download log failed: %s", e)
 
 
+from .calc import RatesUnavailable  # noqa: E402
+
+
+def _rates_unavailable_response(exc):
+    """503, когда живого курса нет и выпустить документ нельзя.
+
+    Не 500: сервис исправен, недоступен внешний источник. Клиенту нужен не
+    стектрейс, а понятный текст и телефон — страница КП показывает их сама.
+    Собрать КП на запасном курсе было бы хуже: документ назвал бы цену,
+    которой никто не подтверждал (на паре 493.11/68.50 это давало 41 512 $
+    вместо 44 326 $ — расхождение 7% без единого признака в документе).
+    """
+    import logging
+    logging.getLogger(__name__).warning("KP not issued, no live rates: %s", exc)
+    return Response(
+        {
+            "detail": "Курс валют временно недоступен, поэтому предложение "
+                      "не может быть выпущено. Попробуйте позже или позвоните — "
+                      "пришлём КП сами.",
+            "code": "rates_unavailable",
+        },
+        status=503,
+    )
+
+
 def _public_vehicle_or_404(vehicle_id):
     """Только то, что реально показано в каталоге: КП по неодобренному или
     скрытому объявлению выдавать нельзя — это документ от лица компании."""
@@ -955,27 +968,22 @@ class InstantKPView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, vehicle_id):
-        from django.core.cache import cache
-        from . import calc
-        from .kp_instant import build_instant_kp
+        from .kp_instant import get_or_issue_snapshot
 
         vehicle = _public_vehicle_or_404(vehicle_id)
-        cfg = calc.load_config()
-        rates = calc.live_rates(cfg)
 
         # Абсолютный адрес PDF собираем из самого запроса: сайт и API живут
         # на разных хостах, и относительная ссылка увела бы браузер за
         # документом на chinamotors.kz, где его нет.
         base_url = request.build_absolute_uri("/").rstrip("/")
 
-        key = _kp_cache_key(vehicle, "json", rates) + f":{base_url}"
-        data = cache.get(key)
-        if data is None:
-            data = build_instant_kp(vehicle, cfg=cfg, rates=rates, base_url=base_url)
-            cache.set(key, data, KP_CACHE_TTL)
+        try:
+            snapshot = get_or_issue_snapshot(vehicle, base_url=base_url)
+        except RatesUnavailable as e:
+            return _rates_unavailable_response(e)
 
         _log_kp_download(request, vehicle, "json")
-        return Response(data)
+        return Response(snapshot.payload)
 
 
 class InstantKPPDFView(APIView):
@@ -988,21 +996,26 @@ class InstantKPPDFView(APIView):
     def get(self, request, vehicle_id):
         from django.core.cache import cache
         from django.http import HttpResponse
-        from . import calc
-        from .kp_instant import build_instant_kp_pdf
+        from .kp_instant import get_or_issue_snapshot, snapshot_pdf
 
         vehicle = _public_vehicle_or_404(vehicle_id)
-        cfg = calc.load_config()
-        rates = calc.live_rates(cfg)
+        base_url = request.build_absolute_uri("/").rstrip("/")
 
-        key = _kp_cache_key(vehicle, "pdf", rates)
+        try:
+            snapshot = get_or_issue_snapshot(vehicle, base_url=base_url)
+        except RatesUnavailable as e:
+            return _rates_unavailable_response(e)
+
+        # Ключ кэша — сам снимок: пока документ тот же, и байты те же.
+        # Курс в ключе больше не нужен, снимок его уже заморозил.
+        key = f"kp:pdf:{snapshot.pk}"
         pdf = cache.get(key)
         if pdf is None:
             # Сборка PDF со встраиванием шрифта и фото — единственная
             # по-настоящему дорогая операция в этом эндпоинте, ради неё кэш
             # и заведён: без него каждый клик рендерил бы документ заново.
             try:
-                pdf = build_instant_kp_pdf(vehicle, cfg=cfg, rates=rates)
+                pdf = snapshot_pdf(snapshot, vehicle)
             except Exception as e:  # noqa: BLE001
                 import logging
                 logging.getLogger(__name__).exception("Instant KP PDF failed: %s", e)
