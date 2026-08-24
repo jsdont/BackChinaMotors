@@ -43,7 +43,8 @@ class KPSettingsAdmin(admin.ModelAdmin):
                        "account", "swift"),
         }),
         ("Условия, сроки, сервис", {
-            "fields": ("delivery_terms", "timeline", "service_center"),
+            "fields": ("delivery_terms", "timeline", "service_center",
+                       "kp_valid_days"),
         }),
         ("Оформление", {
             "fields": ("show_seal",),
