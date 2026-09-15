@@ -684,6 +684,35 @@ class KPTemplateAdminTest(TestCase):
         KPSettings(seller_name="второй").save()
         self.assertEqual(KPSettings.objects.count(), 1)
 
+    def test_every_setting_is_editable_in_the_admin(self):
+        """Поле, добавленное в модель, должно появиться и в форме админки.
+
+        KPSettings и CalcConfig существуют ровно затем, чтобы их правили из
+        админки без деплоя. Обе задают fieldsets списком, а Django при явных
+        fieldsets показывает ТОЛЬКО перечисленное — поле, забытое в списке,
+        живёт в базе, но недоступно никак, кроме manage.py shell. Ровно так
+        и вышло с kp_valid_days: миграция есть, а в форме поля нет.
+
+        User сюда не входит намеренно: first_name/last_name не используются
+        при телефонной авторизации, а notifications_seen_at обновляет код.
+        """
+        from django.contrib import admin as dj_admin
+        from core.models import KPSettings, CalcConfig
+
+        for model in (KPSettings, CalcConfig):
+            adm = dj_admin.site._registry[model]
+            shown = {f for _, opts in adm.fieldsets for f in opts.get("fields", ())}
+            editable = {
+                f.name for f in model._meta.fields
+                if f.editable and not f.auto_created and f.name != "id"
+            }
+            missing = editable - shown - set(adm.readonly_fields or ())
+            self.assertEqual(
+                missing, set(),
+                f"{model.__name__}: поля есть в модели, но не в fieldsets админки — "
+                f"править их можно будет только через shell: {sorted(missing)}",
+            )
+
 
 class KPCalcRowsTest(TestCase):
     """Построчный расчёт (DealCalcRow) имеет приоритет над JSON в КП."""
